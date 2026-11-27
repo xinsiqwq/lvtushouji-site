@@ -1,0 +1,3 @@
+SESSION_SECRET=replace-with-at-least-32-random-characters-for-local-dev
+SETUP_TOKEN=replace-with-at-least-32-random-characters-for-setup
+TIANDITU_KEY=

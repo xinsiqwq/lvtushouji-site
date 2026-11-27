@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; object-src 'none'; base-uri 'none';">
+  <title>星图来源与开源许可</title>
+  <style>html{color-scheme:dark}body{max-width:760px;margin:0 auto;padding:48px 24px;background:#071321;color:#cad5df;font:16px/1.8 system-ui,sans-serif}h1{font-size:26px;color:#ece7db}h2{font-size:18px;margin-top:32px}a{color:#d2b277;text-underline-offset:4px}p{margin:14px 0}li{margin:6px 0}code{font:14px ui-monospace,monospace}</style>
+</head>
+<body>
+  <h1>星图来源与开源许可</h1>
+  <p>这幅星图使用本地 Stellarium Web Engine、基础星表和西方星座资料。观测位置、时间与星体坐标由实际引擎计算；搜索范围为页面列出的行星、25 颗具名恒星与 88 个星座。</p>
+  <p><a href="https://github.com/Stellarium/stellarium-web-engine" rel="noreferrer">上游项目与公开源代码</a> · <a href="./source.zip" download>下载本站星图源码与资源包</a> · <a href="./REPRODUCE.md">本地提取与复现说明</a> · <a href="./manifest.json">资源校验清单</a></p>
+  <h2>版本与源码说明</h2>
+  <p>运行文件来自已保存的引擎编译片段和其对应资源引用。可获得的上游源码快照已一同保留，但该源码快照与缓存 WASM 的精确版本关联尚未确认；这里不声称二者属于同一个已核验提交。资源清单保留实际文件校验值，上游提交版本记为未知。</p>
+  <h2>许可与署名</h2>
+  <ul>
+    <li>Stellarium Web Engine：© 2022 Stellarium Labs SRL，<a href="./LICENSE-AGPL-3.0.txt">GNU AGPL v3 原文</a>。</li>
+    <li>西方星座资料：Stellarium 团队；星座图像：Johan Meuris。原资料声明文本与数据为 CC BY-SA（未标版本），图像为 Free Art License。<a href="./data/skycultures/western/description.md">保留的原署名、许可与参考文献</a>。</li>
+    <li>中文字体：来自官方 Noto Sans SC，本站使用改名后的 Travel Sky Sans 字符子集。<a href="./vendor/TravelSkySans-OFL.txt">SIL Open Font License 1.1 原文</a>。</li>
+    <li>基础星表与 Guéreins 地景：保留上游引擎示例资源及其元数据。引擎依赖的其他版权声明随源码包保留。</li>
+  </ul>
+  <p><a href="./NOTICE.txt">完整 NOTICE 声明</a></p>
+  <h2>基础目录范围</h2>
+  <p>本地星表覆盖全部十二个基础天区，并保留实际存在的部分细分星表。它用于基础观星，不代表完整 Gaia 或深空天体目录。星座连线开启；星座插画默认关闭。位置与日期由页面设置，星图不会自行调用定位、统计或远程账号服务。</p>
+</body>
+</html>

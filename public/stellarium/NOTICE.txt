@@ -1,0 +1,81 @@
+STELLARIUM WEB ENGINE — THIRD-PARTY NOTICES
+
+Engine: Stellarium Web Engine.
+Copyright (c) 2022 Stellarium Labs SRL, as recorded in the available source.
+The engine is licensed under GNU Affero General Public License version 3,
+or alternatively under a commercial licence. This distribution uses AGPL v3.
+The original AGPL text is preserved as LICENSE-AGPL-3.0.txt.
+Upstream source: https://github.com/Stellarium/stellarium-web-engine
+
+Available-source limitation:
+The browser factory was extracted from an existing locally cached compiled
+bundle. The matching cached WASM resource was selected through that bundle's
+original hashed asset reference. Its precise upstream commit/version has not
+been established. The included C/JavaScript source is the available upstream
+source snapshot; correspondence between that snapshot and the cached WASM has
+not been verified. No exact-matching revision or fresh WASM rebuild is claimed.
+See manifest.json for file hashes and source.zip for the reviewed source bundle.
+
+Changes by the travel-notebook project, 2026-10-12:
+- Browser-only factory extraction, independent of the old Vue application UI.
+- Correct backing-pixel comparison when devicePixelRatio exceeds one.
+- Same-origin iframe messaging, real state reporting and pausable RAF lifecycle.
+- Explicit native name aliases for the UI's 25 stars and 88 constellations.
+- Chinese translateFn, Chinese font subsets and western name records.
+- Star child masks constrained to the local test snapshot's real child files.
+These engine adapters and preparation tools are distributed under AGPL v3.
+
+Sky data:
+The bundled stars and Guereins landscape come from the upstream engine's
+apps/test-skydata sample. The star data retain their recorded skysource hash.
+The landscape retains its original title, release date and source checksum.
+This is a basic local test catalogue, not the complete Gaia catalogue.
+The upstream engine source licence and sample metadata are preserved.
+The upstream public star-data credits name the following source catalogues:
+- Gaia DR2: This work has made use of data from the European Space Agency
+  (ESA) mission Gaia (https://www.cosmos.esa.int/gaia), processed by the Gaia
+  Data Processing and Analysis Consortium (DPAC,
+  https://www.cosmos.esa.int/web/gaia/dpac/consortium). Funding for the DPAC has
+  been provided by national institutions, in particular the institutions
+  participating in the Gaia Multilateral Agreement.
+  Gaia Collaboration et al. (2016), mission description; Gaia Collaboration
+  et al. (2018b), contents and survey properties.
+- Hipparcos: ESA, 1997, The Hipparcos and Tycho Catalogues, ESA SP-1200.
+  http://cdsweb.u-strasbg.fr/ftp/cats/I/239
+- Bright Star Catalogue, 5th Revised Ed. (Hoffleit+, 1991).
+  http://cdsarc.u-strasbg.fr/ftp/pub/cats/V/50/
+These credits preserve the upstream acknowledgement; the exact mix within the
+available test subset was not independently reconstructed.
+
+Western sky culture:
+Authors: Stellarium's team.
+Illustrations: Johan Meuris.
+Text and data: CC BY-SA (the included upstream description gives no version).
+Illustrations: Free Art License.
+The original description.md and original western index are retained.
+See data/skycultures/western/description.md for the original authors, licence
+statement and references. Illustrations are present locally and hidden by
+default; the engine can display the illustration of a selected constellation.
+
+Chinese font:
+Original family: Noto Sans SC, obtained from the official Google Fonts source.
+Copyright 2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name
+'Source', as recorded in the original SIL Open Font License 1.1 text.
+Font source:
+https://raw.githubusercontent.com/google/fonts/main/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf
+Original licence:
+https://raw.githubusercontent.com/google/fonts/main/ofl/notosanssc/OFL.txt
+The modified static subsets use the family name 'Travel Sky Sans', at weights
+400 and 600. They retain the font copyright and licence, and include the Chinese
+glyphs used by this runtime. See vendor/TravelSkySans-OFL.txt and subset-font.py.
+
+Additional engine dependencies:
+The available engine source contains third-party C libraries and bundled assets.
+Their individual copyright/licence notices are preserved in source.zip under
+docs/third-party/stellarium/sources/engine/ext_src and the source/data files.
+The Stellarium licence does not replace those notices.
+
+Private-site material:
+No original site database, account/configuration/credential files, uploads,
+location history, photographs, or application UI are part of the source bundle.
+No official geolocation, analytics, search API or account service is registered.

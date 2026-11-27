@@ -1,0 +1,206 @@
+/* Do NOT register --color-* via @property { syntax: '<color>'; inherits: true } —
+   tokens must remain unregistered so light-dark() stays live inside color-scheme subtrees. */
+
+:root {
+  color-scheme: light dark;
+
+  /* Raw Palette (Light: Antigravity / Gemini) */
+  --palette-page-light: #ffffff;
+  --palette-page-edge-light: #f6f8fb;
+  --palette-surface-light: #f2f4f8;
+  --palette-surface-hover-light: #e8edf4;
+  --palette-paper-light: #faf8f4;
+  --palette-ink-light: #1f1f1f;
+  --palette-ink-muted-light: #5f6368;
+  --palette-cta-bg-light: #1f1f1f;
+  --palette-cta-text-light: #ffffff;
+  --palette-accent-light: #1a73e8;
+  --palette-postmark-light: #9a5b42;
+  --palette-hairline-light: rgba(31, 31, 31, 0.08);
+  --palette-hairline-strong-light: rgba(31, 31, 31, 0.14);
+  --palette-nav-glass-light: rgba(255, 255, 255, 0.8);
+  --palette-scroll-track-light: #f2f4f8;
+  --palette-scroll-thumb-light: #70757a;
+
+  /* Raw Palette (Dark: AI Studio / DeepMind) */
+  --palette-page-dark: #131314;
+  --palette-page-edge-dark: #0c0d0f;
+  --palette-surface-dark: #1e1f20;
+  --palette-surface-hover-dark: #282a2c;
+  --palette-paper-dark: #222427;
+  --palette-ink-dark: #e3e3e3;
+  --palette-ink-muted-dark: #9aa0a6;
+  --palette-cta-bg-dark: #e3e3e3;
+  --palette-cta-text-dark: #131314;
+  --palette-accent-dark: #8ab4f8;
+  --palette-postmark-dark: #d69f87;
+  --palette-hairline-dark: rgba(227, 227, 227, 0.09);
+  --palette-hairline-strong-dark: rgba(227, 227, 227, 0.16);
+  --palette-nav-glass-dark: rgba(19, 19, 20, 0.8);
+  --palette-scroll-track-dark: #1e1f20;
+  --palette-scroll-thumb-dark: #80868b;
+
+  /* Constant Deep-Space Tokens (Observatory & Darkroom Lightbox) */
+  --color-deep-space: #0b0c0e;
+  --color-deep-space-surface: #14161a;
+  --color-deep-space-hover: #1e2025;
+  --color-deep-space-ink: #e3e3e3;
+  --color-deep-space-muted: #9aa0a6;
+  --color-deep-space-accent: #8ab4f8;
+  --color-deep-space-hairline: rgba(227, 227, 227, 0.12);
+
+  /* Semantic Defaults (Light base for pre-light-dark fallback) */
+  --color-page: var(--palette-page-light);
+  --color-page-edge: var(--palette-page-edge-light);
+  --color-surface: var(--palette-surface-light);
+  --color-surface-hover: var(--palette-surface-hover-light);
+  --color-paper: var(--palette-paper-light);
+  --color-ink: var(--palette-ink-light);
+  --color-ink-muted: var(--palette-ink-muted-light);
+  --color-cta-bg: var(--palette-cta-bg-light);
+  --color-cta-text: var(--palette-cta-text-light);
+  --color-accent: var(--palette-accent-light);
+  --color-postmark: var(--palette-postmark-light);
+  --color-hairline: var(--palette-hairline-light);
+  --color-hairline-strong: var(--palette-hairline-strong-light);
+  --color-nav-glass: var(--palette-nav-glass-light);
+  --color-scroll-track: var(--palette-scroll-track-light);
+  --color-scroll-thumb: var(--palette-scroll-thumb-light);
+
+  /* Typography */
+  --font-sans: 'Inter', 'Noto Sans SC', 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans CJK SC', 'Source Han Sans SC', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-serif: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', Georgia, serif;
+  --font-mono: 'JetBrains Mono', 'SFMono-Regular', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+
+  /* Layout & Motion Scales */
+  --nav-height: 56px;
+  --stage-radius: 32px;
+  --card-radius: 20px;
+  --pill-radius: 9999px;
+  --ease-editorial: cubic-bezier(0.22, 1, 0.36, 1);
+
+  accent-color: var(--color-accent);
+  scrollbar-color: var(--color-scroll-thumb) var(--color-scroll-track);
+}
+
+/* Primary modern cascade: explicit data-theme / meta[name="color-scheme"] -> :root color-scheme */
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+:root:has(> head > meta[name='color-scheme'][content='dark']) {
+  color-scheme: dark;
+}
+:root:has(> head > meta[name='color-scheme'][content='light']) {
+  color-scheme: light;
+}
+
+/* Fallbacks only for browsers without light-dark() */
+@supports not (color: light-dark(white, black)) {
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) {
+      --color-page: var(--palette-page-dark);
+      --color-page-edge: var(--palette-page-edge-dark);
+      --color-surface: var(--palette-surface-dark);
+      --color-surface-hover: var(--palette-surface-hover-dark);
+      --color-paper: var(--palette-paper-dark);
+      --color-ink: var(--palette-ink-dark);
+      --color-ink-muted: var(--palette-ink-muted-dark);
+      --color-cta-bg: var(--palette-cta-bg-dark);
+      --color-cta-text: var(--palette-cta-text-dark);
+      --color-accent: var(--palette-accent-dark);
+      --color-postmark: var(--palette-postmark-dark);
+      --color-hairline: var(--palette-hairline-dark);
+      --color-hairline-strong: var(--palette-hairline-strong-dark);
+      --color-nav-glass: var(--palette-nav-glass-dark);
+      --color-scroll-track: var(--palette-scroll-track-dark);
+      --color-scroll-thumb: var(--palette-scroll-thumb-dark);
+    }
+  }
+
+  :root[data-theme='light'] {
+    --color-page: var(--palette-page-light);
+    --color-page-edge: var(--palette-page-edge-light);
+    --color-surface: var(--palette-surface-light);
+    --color-surface-hover: var(--palette-surface-hover-light);
+    --color-paper: var(--palette-paper-light);
+    --color-ink: var(--palette-ink-light);
+    --color-ink-muted: var(--palette-ink-muted-light);
+    --color-cta-bg: var(--palette-cta-bg-light);
+    --color-cta-text: var(--palette-cta-text-light);
+    --color-accent: var(--palette-accent-light);
+    --color-postmark: var(--palette-postmark-light);
+    --color-hairline: var(--palette-hairline-light);
+    --color-hairline-strong: var(--palette-hairline-strong-light);
+    --color-nav-glass: var(--palette-nav-glass-light);
+    --color-scroll-track: var(--palette-scroll-track-light);
+    --color-scroll-thumb: var(--palette-scroll-thumb-light);
+  }
+
+  :root[data-theme='dark'] {
+    --color-page: var(--palette-page-dark);
+    --color-page-edge: var(--palette-page-edge-dark);
+    --color-surface: var(--palette-surface-dark);
+    --color-surface-hover: var(--palette-surface-hover-dark);
+    --color-paper: var(--palette-paper-dark);
+    --color-ink: var(--palette-ink-dark);
+    --color-ink-muted: var(--palette-ink-muted-dark);
+    --color-cta-bg: var(--palette-cta-bg-dark);
+    --color-cta-text: var(--palette-cta-text-dark);
+    --color-accent: var(--palette-accent-dark);
+    --color-postmark: var(--palette-postmark-dark);
+    --color-hairline: var(--palette-hairline-dark);
+    --color-hairline-strong: var(--palette-hairline-strong-dark);
+    --color-nav-glass: var(--palette-nav-glass-dark);
+    --color-scroll-track: var(--palette-scroll-track-dark);
+    --color-scroll-thumb: var(--palette-scroll-thumb-dark);
+  }
+}
+
+@supports (color: light-dark(white, black)) {
+  :root {
+    --color-page: light-dark(var(--palette-page-light), var(--palette-page-dark));
+    --color-page-edge: light-dark(var(--palette-page-edge-light), var(--palette-page-edge-dark));
+    --color-surface: light-dark(var(--palette-surface-light), var(--palette-surface-dark));
+    --color-surface-hover: light-dark(var(--palette-surface-hover-light), var(--palette-surface-hover-dark));
+    --color-paper: light-dark(var(--palette-paper-light), var(--palette-paper-dark));
+    --color-ink: light-dark(var(--palette-ink-light), var(--palette-ink-dark));
+    --color-ink-muted: light-dark(var(--palette-ink-muted-light), var(--palette-ink-muted-dark));
+    --color-cta-bg: light-dark(var(--palette-cta-bg-light), var(--palette-cta-bg-dark));
+    --color-cta-text: light-dark(var(--palette-cta-text-light), var(--palette-cta-text-dark));
+    --color-accent: light-dark(var(--palette-accent-light), var(--palette-accent-dark));
+    --color-postmark: light-dark(var(--palette-postmark-light), var(--palette-postmark-dark));
+    --color-hairline: light-dark(var(--palette-hairline-light), var(--palette-hairline-dark));
+    --color-hairline-strong: light-dark(var(--palette-hairline-strong-light), var(--palette-hairline-strong-dark));
+    --color-nav-glass: light-dark(var(--palette-nav-glass-light), var(--palette-nav-glass-dark));
+    --color-scroll-track: light-dark(var(--palette-scroll-track-light), var(--palette-scroll-track-dark));
+    --color-scroll-thumb: light-dark(var(--palette-scroll-thumb-light), var(--palette-scroll-thumb-dark));
+  }
+}
+
+/* Constant Deep-Space Subtree (Observatory & Darkroom Lightbox) */
+.deep-space {
+  color-scheme: only dark;
+  background-color: var(--color-deep-space);
+
+  --color-page: var(--color-deep-space);
+  --color-page-edge: var(--color-deep-space);
+  --color-surface: var(--color-deep-space-surface);
+  --color-surface-hover: var(--color-deep-space-hover);
+  --color-paper: var(--palette-paper-dark);
+  --color-ink: var(--color-deep-space-ink);
+  --color-ink-muted: var(--color-deep-space-muted);
+  --color-cta-bg: var(--palette-cta-bg-dark);
+  --color-cta-text: var(--palette-cta-text-dark);
+  --color-accent: var(--color-deep-space-accent);
+  --color-postmark: var(--palette-postmark-dark);
+  --color-hairline: var(--color-deep-space-hairline);
+  --color-hairline-strong: rgba(227, 227, 227, 0.22);
+
+  color: var(--color-deep-space-ink);
+  accent-color: var(--color-deep-space-accent);
+  caret-color: var(--color-deep-space-accent);
+  scrollbar-color: var(--palette-scroll-thumb-dark) var(--color-deep-space);
+}

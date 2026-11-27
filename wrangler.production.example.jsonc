@@ -1,0 +1,52 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "lvtushouji-site",
+  "account_id": "<YOUR_CLOUDFLARE_ACCOUNT_ID>",
+  "compatibility_date": "2026-11-20",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "./src/server/index.ts",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [
+    {
+      "pattern": "your-domain.example",
+      "custom_domain": true
+    }
+  ],
+  "assets": {
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/__setup"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "lvtushouji-db",
+      "database_id": "<YOUR_D1_DATABASE_ID>",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "MEDIA",
+      "bucket_name": "lvtushouji-media"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "ARENA_ROOM",
+        "class_name": "ArenaRoomDO"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["ArenaRoomDO"]
+    }
+  ],
+  "observability": {
+    "enabled": false
+  }
+}

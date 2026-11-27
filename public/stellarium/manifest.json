@@ -1,0 +1,918 @@
+{
+  "upstream": {
+    "bundleSha256": "38b9c400b3c3dfe12994531e282b4c4fdc124d80e6c2fccfc70153e28dfb662d",
+    "factorySha256": "23841d957ad1b6cf1a043ad5fd031f7b620f5b0834cadec537714a281dd02f01",
+    "module": "c074",
+    "repository": "https://github.com/Stellarium/stellarium-web-engine",
+    "revision": null
+  },
+  "availableSourceSnapshot": {
+    "repository": "https://github.com/Stellarium/stellarium-web-engine",
+    "revision": null,
+    "cachedWasmCorrespondence": "Not established; this is the available local source snapshot, not a claim of an exact matching revision."
+  },
+  "modifications": [
+    "Extract inner browser factory c074; replace surrounding Babel helpers.",
+    "Correct backing-pixel resize comparison at devicePixelRatio > 1.",
+    "Isolate and pause the recursive RAF loop in a same-origin iframe.",
+    "Own and catch the WASM resource request; pass wasmBinary to bypass a dropped streaming fetch Promise.",
+    "Apply Chinese translateFn and fontTools 4.66.1 static font subsets.",
+    "Add 25 HIP-to-native-name aliases and western culture name records.",
+    "Restrict star child masks to the 32 real bundled order-1 tiles."
+  ],
+  "catalogue": {
+    "kind": "Basic upstream test snapshot",
+    "orderZeroTiles": 12,
+    "orderOneTiles": 32,
+    "completeGaiaCatalogue": false,
+    "dsoRegistered": false
+  },
+  "font": {
+    "originalUrl": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf",
+    "licence": "SIL Open Font License 1.1",
+    "tool": "fontTools 4.66.1",
+    "originalSha256": "a3041811a78c361b1de50f953c805e0244951c21c5bd412f7232ef0d899af0da"
+  },
+  "tooling": {
+    "typescript": "5.9.3",
+    "@playwright/test": "1.64.0"
+  },
+  "files": [
+    {
+      "path": "catalog.js",
+      "bytes": 19943,
+      "sha256": "edbe9b129710a95472777a6d7da86e996903408a2c3a2176b9e1e80e942671c7"
+    },
+    {
+      "path": "data/landscapes/guereins/description.ar.utf8",
+      "bytes": 295,
+      "sha256": "92a4d2757d5b386b629a42e57c3c8168e682ddbcfaacd96a9cd33526c57822f3"
+    },
+    {
+      "path": "data/landscapes/guereins/description.be.utf8",
+      "bytes": 416,
+      "sha256": "962a73e5a8d7ba8453e2cf16b561dd7293ca7eaf5849c34b64856a6d28a85479"
+    },
+    {
+      "path": "data/landscapes/guereins/description.bg.utf8",
+      "bytes": 383,
+      "sha256": "8436aff821768fd512da7017ddfe5158ce43f64129b930dab0a43d72a926db9b"
+    },
+    {
+      "path": "data/landscapes/guereins/description.bn.utf8",
+      "bytes": 679,
+      "sha256": "cfd697104571c3f999e745aa4cc52d20143b0e3b8a5ce5a2b0cd3e1f243e696d"
+    },
+    {
+      "path": "data/landscapes/guereins/description.de.utf8",
+      "bytes": 274,
+      "sha256": "5e5868f2410014bc0644f9e6f64cd9aa386f60314620f62a65a3f5db888d41f2"
+    },
+    {
+      "path": "data/landscapes/guereins/description.en.html",
+      "bytes": 260,
+      "sha256": "158239d056052f376e95d729b95baeadeaa262e01a8569973b17873edd5e8758"
+    },
+    {
+      "path": "data/landscapes/guereins/description.en.utf8",
+      "bytes": 260,
+      "sha256": "158239d056052f376e95d729b95baeadeaa262e01a8569973b17873edd5e8758"
+    },
+    {
+      "path": "data/landscapes/guereins/description.fr.utf8",
+      "bytes": 273,
+      "sha256": "5b72cef7858a6405900a9e6a7df3431ecc452aef102ac2cd99ed5372f5a56f4a"
+    },
+    {
+      "path": "data/landscapes/guereins/description.gd.utf8",
+      "bytes": 267,
+      "sha256": "054ffcdb119ebdc614dd7ca7af228ef4bfc356622ae75505a1915cd91e392ef0"
+    },
+    {
+      "path": "data/landscapes/guereins/description.hu.utf8",
+      "bytes": 265,
+      "sha256": "72cfd4e1369fd93a4455032458773d656a7b5ccc47eb582f8acee0009e090e3e"
+    },
+    {
+      "path": "data/landscapes/guereins/description.ko.utf8",
+      "bytes": 288,
+      "sha256": "81fd9d5aca15a6539506074134a0750fbfca234917f53856d18102867495dba5"
+    },
+    {
+      "path": "data/landscapes/guereins/description.nb.utf8",
+      "bytes": 230,
+      "sha256": "625904610a2e61328493b2b9cb02b502398206374a27fa214a35f957d2467677"
+    },
+    {
+      "path": "data/landscapes/guereins/description.pt_BR.utf8",
+      "bytes": 269,
+      "sha256": "620e86cbb4f9f9a86c220214defbefaa7be679c7ee42cccd5c3db27437a6cbdd"
+    },
+    {
+      "path": "data/landscapes/guereins/description.ru.utf8",
+      "bytes": 729,
+      "sha256": "0324fe39e2abe98e58aa022ea02934b4a3202e133d0cff7a170d63cfcbffa729"
+    },
+    {
+      "path": "data/landscapes/guereins/description.uk.utf8",
+      "bytes": 395,
+      "sha256": "8e6cd821cdf8473fbfcfbff6b1ae2bd52ae11528b3c2ae26f8c9e6ecbb2a3378"
+    },
+    {
+      "path": "data/landscapes/guereins/description.zh_CN.utf8",
+      "bytes": 233,
+      "sha256": "8f2bceab55c496d9d11c424ef2d0f02b01712a913b455a0bdf4408f0ea046e63"
+    },
+    {
+      "path": "data/landscapes/guereins/Norder0/Allsky.webp",
+      "bytes": 6836,
+      "sha256": "b9c55069dcba5b77110297dcc28465e0743d36da381a40958752c1582dcc3d54"
+    },
+    {
+      "path": "data/landscapes/guereins/Norder0/Dir0/Npix0.webp",
+      "bytes": 1538,
+      "sha256": "97fda134c498cc7dd288498febcba901a0efa846b17314fc52b5a95e69c1056e"
+    },
+    {
+      "path": "data/landscapes/guereins/Norder0/Dir0/Npix1.webp",
+      "bytes": 998,
+      "sha256": "c4aa931689b478dce4173a7bcb36f734ea5cb08044e59fd33facdc123373fdc0"
+    },
+    {
+      "path": "data/landscapes/guereins/Norder0/Dir0/Npix10.webp",
+      "bytes": 55756,
+      "sha256": "f213317cb282e7bcc7378dcfe32037d89df9a5f3e0e990e3fe0bac566bc7eb5a"
+    },
+    {
+      "path": "data/landscapes/guereins/Norder0/Dir0/Npix11.webp",
+      "bytes": 56674,
+      "sha256": "51728b5533abed8ed2df9a1e7c108e79b73cab74611051f62084a7a78d2caa21"
+    },
+    {
+      "path": "data/landscapes/guereins/Norder0/Dir0/Npix2.webp",
+      "bytes": 1150,
+      "sha256": "aadcb00b3868523663b73c0567787ec5ac21582be8adb46d86246770a88a69b9"
+    },
+    {
+      "path": "data/landscapes/guereins/Norder0/Dir0/Npix3.webp",
+      "bytes": 1140,
+      "sha256": "0b0b6cb1843c2d186d9e7d0039c435ae57a597314b41ef2049af3a4fb3d52f7e"
+    },
+    {
+      "path": "data/landscapes/guereins/Norder0/Dir0/Npix4.webp",
+      "bytes": 42038,
+      "sha256": "f0eb9a4df12881552116aa6c2a117c3a6c54052145b759e6fe084958172b7ca4"
+    },
+    {
+      "path": "data/landscapes/guereins/Norder0/Dir0/Npix5.webp",
+      "bytes": 41014,
+      "sha256": "9017f37dfa5d854aa04f8e06c08e5e7c14e338bd1c42ac75b140a060301b7b9b"
+    },
+    {
+      "path": "data/landscapes/guereins/Norder0/Dir0/Npix6.webp",
+      "bytes": 27682,
+      "sha256": "d1da9636145249fa37f93f9ef5d27d85040d000ba60867a60612380f86fdcf5a"
+    },
+    {
+      "path": "data/landscapes/guereins/Norder0/Dir0/Npix7.webp",
+      "bytes": 30588,
+      "sha256": "6b3b932ca54a53aa4d0d8e53abe3bac68b512ca3396a04730c5695a6f59cd436"
+    },
+    {
+      "path": "data/landscapes/guereins/Norder0/Dir0/Npix8.webp",
+      "bytes": 53850,
+      "sha256": "ecb6656cc8231f14933e036b2100996ce5a44b68cc7615929b805ea8cea69836"
+    },
+    {
+      "path": "data/landscapes/guereins/Norder0/Dir0/Npix9.webp",
+      "bytes": 50754,
+      "sha256": "fe2831e152ffcc812a5a2e65160398a5513eefd09fdc78b20e1e9a1dfdfe7f26"
+    },
+    {
+      "path": "data/landscapes/guereins/properties",
+      "bytes": 388,
+      "sha256": "f41c4bed33db920f5c90a623516c45cbe1544661151b3d75ec5c810bd4ece77f"
+    },
+    {
+      "path": "data/skycultures/western/description.md",
+      "bytes": 9901,
+      "sha256": "fa9799bea015c750fae13a490e98bf674f281b5a64072a257600b4683157c05a"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/andromeda.webp",
+      "bytes": 17506,
+      "sha256": "8cf9d504368991d7b6eb942816fb02f2091e7d8afc368b7965aec2e4d783442e"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/antlia.webp",
+      "bytes": 2052,
+      "sha256": "f78d5e37831a51727a0386c8fea7485d10563effb4d25d25ab385eece2c46161"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/apus.webp",
+      "bytes": 4422,
+      "sha256": "947d434144b50448227bff6b8be3d5011a14d6aa489919a52c0d27ac0782051b"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/aquarius.webp",
+      "bytes": 17246,
+      "sha256": "760877e220491a01c65a2281e74bc5021ca1d2d5323c27ff3c0a5dc58bcf9c51"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/aquila.webp",
+      "bytes": 12380,
+      "sha256": "e8a0c535522c6928453443a008ea0b52c41df7eaf5f385294db654f98e42a856"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/ara.webp",
+      "bytes": 6422,
+      "sha256": "9b2856e8e4eb807c70c9c86f7bedeaf29b6a701e6401a0146b614d32bae79248"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/argonavis.webp",
+      "bytes": 20500,
+      "sha256": "b8fb909dfb84ccfce76f1cadb8b0e6760d1d25b355b45bf1adcfd9db1f59a8ef"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/aries.webp",
+      "bytes": 5584,
+      "sha256": "e4e2c2998cb4e6d33b6fc415baf7a99e4206c1a07fb9208959916d83d433bba1"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/auriga.webp",
+      "bytes": 24574,
+      "sha256": "befb680b430e23c08bcf1278347e24b6b10dc73ed980e369a2a7c1d95e538113"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/bootes.webp",
+      "bytes": 14034,
+      "sha256": "31d66ae05f6bc74e481819a0c930c54eb035629e992d4435e898cbfcb07d8ada"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/caelum.webp",
+      "bytes": 2590,
+      "sha256": "24c60ad36bf7b4206e28b4d4b3be3b2d31d17f17d3e17195ed4ffb64a584451e"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/camelopardalis.webp",
+      "bytes": 2644,
+      "sha256": "51098d362be9152610cbaf47e1dfc1455eb53bfc0146f8bb4a6be2edbd4e45e8"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/cancer.webp",
+      "bytes": 4810,
+      "sha256": "400fcfbeb0e4250ebcecb8e74806de91de069e78b5f6d83a45f645fb4b7dc375"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/canes-venatici.webp",
+      "bytes": 4426,
+      "sha256": "6dec35c20466b038254064d81c8525dbd90c63e423f8f45088a38baa493f82c0"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/canis-major.webp",
+      "bytes": 9070,
+      "sha256": "f8bc86e4da5fd1399114758dddd7c3324d4fa05f1b0f26595893a2eef5b2bd45"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/canis-minor.webp",
+      "bytes": 3708,
+      "sha256": "14c9979b3c4089adf684ab74e600ea4e1d9b2589c4970bc812ccc6fc57f5bf17"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/capricornus.webp",
+      "bytes": 15236,
+      "sha256": "31e1644f89d0ed914b8e30feb0f6393b9f824ad930ed88c59672d92317592c2f"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/cassiopeia.webp",
+      "bytes": 17644,
+      "sha256": "e014cf9fbcefe9955b6e4b5b5d1724601490dc02ed75880d073e7a92e43165aa"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/centaurus.webp",
+      "bytes": 12578,
+      "sha256": "e18618dad16fcb877a9cb52fabef08d9c4de0784f8366b83e88d0974a16218a3"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/cepheus.webp",
+      "bytes": 15522,
+      "sha256": "21ca1ce9dbf7c813b805698ba27d1ed44be31c7f70508268103856750106c1bb"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/cetus.webp",
+      "bytes": 12440,
+      "sha256": "f37d54cc34b48fdf88a3c5a6ad3d240b4913f78b45e6a814fe76b98ceb4d1013"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/chamaeleon.webp",
+      "bytes": 4086,
+      "sha256": "3a8331b220f9f8eb580b65feb8618664db986d7a573d33dc09429c6388df5ceb"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/circinus.webp",
+      "bytes": 2780,
+      "sha256": "a12046ad719ec4a8670e8ee1b9ff9da81ac168d5f4701d2d8d3e7c96aac0d6f5"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/columba.webp",
+      "bytes": 4676,
+      "sha256": "0c3cf045284b237d1cc31c783751c22b8364ac64bc73bc2c1cfc3629e6f2203d"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/coma-berenices.webp",
+      "bytes": 6470,
+      "sha256": "007aee37c425354c6d1ce7a39b6f8e179bd874e09b2530aca85b4884e7c292d6"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/corona-australis.webp",
+      "bytes": 6128,
+      "sha256": "ebb2c73efe11c89871332225ef12edc7c866700f796b8c3283109f77d747baa6"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/corona-borealis.webp",
+      "bytes": 6600,
+      "sha256": "c8039259f50acbcf7d836e44d35cd6ecc624d5f009dbc2515e77456dcc5219a8"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/corvus.webp",
+      "bytes": 5308,
+      "sha256": "9d97cb30a68d4c441b4a902eeecf5864051fc1b21f4273e9c3d1200fdf99936b"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/crater.webp",
+      "bytes": 6674,
+      "sha256": "dfb106b98cf28053a3ae781979a80212111b4729cc60997b285df026f0487f92"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/crux.webp",
+      "bytes": 2766,
+      "sha256": "14e86d5a1034d71e1a0f8c4333b0d373b7e1f45777dbf432fa29378fd1288d35"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/cygnus.webp",
+      "bytes": 10172,
+      "sha256": "7879f2737b5743fe24d3322dbfe10ce5856228e7917b0594304c574c33eefc52"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/delphinus.webp",
+      "bytes": 3028,
+      "sha256": "29d405f64051194cb3e30627ab5b63c7846cff516b484065679bd3e788b9f73f"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/dorado.webp",
+      "bytes": 4194,
+      "sha256": "4c42f42dc82ddd757d70c368a69078380bca3d0675fc65c8d5a8822862b25a7d"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/draco.webp",
+      "bytes": 14280,
+      "sha256": "1428284afec66aaa387f4c04bbf46f4a43b45d7c27271d5b924202e68505cab3"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/equuleus.webp",
+      "bytes": 5280,
+      "sha256": "2b3d52bfe26a551fbe2cb88f27ef3643f73461292ec672ef9caa40f61aa03715"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/eridanus.webp",
+      "bytes": 7660,
+      "sha256": "82a3e6fc27d77ddc73cf48d3040821ef78182ae2231824b7f2202bbf5de0dbd3"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/fornax.webp",
+      "bytes": 4984,
+      "sha256": "fd5c8f43bbd5f0d0d4f18121cae0d0ea1450c1b4371eaaefa1f90c9cb5246bd0"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/gemini.webp",
+      "bytes": 8074,
+      "sha256": "b0ec54e1e416ec3bae4ee7fda5b5c49c1cdc610d9d45802aae4e7ffff33fc362"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/grus.webp",
+      "bytes": 4928,
+      "sha256": "1fb8192a062bb26d391ec2a8d10ed29f37e2b370e9b3a27559bc15a057d72cc7"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/hercules.webp",
+      "bytes": 16690,
+      "sha256": "ec55ab6703d7c084027dd9f0e795e8d9ac6b4da6d84f6776c358064a3ab4f757"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/horlogium.webp",
+      "bytes": 5630,
+      "sha256": "009a9900b0bc0e18d5ed9436986f1d3cb4e36b1d0ab17906936837da54db69c5"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/hydra.webp",
+      "bytes": 4480,
+      "sha256": "e9800421df3b558b5a6cacae75e5d0e2c3b2ed3ec9513650b82dd09d2aee415b"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/hydrus.webp",
+      "bytes": 2914,
+      "sha256": "c5f22158936e6f18b4ede1d64a92c6892c39e953422d3fa2f8a23609f9fd3723"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/indus.webp",
+      "bytes": 6192,
+      "sha256": "7be1d79194e1d265929774348e729c42e371d737173ab14f49ef1fec3a678262"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/lacerta.webp",
+      "bytes": 4208,
+      "sha256": "71b904de644280aa45a4315bd038238b69d7f88bb571533810cf58297e546f29"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/leo-minor.webp",
+      "bytes": 3658,
+      "sha256": "043ce427f7480e6d4c31f36c8ae50069d8e89d07be5ae7c598cde44914bbda30"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/leo.webp",
+      "bytes": 11516,
+      "sha256": "921e49c2a2381240db5ae3873014fb8c68c86db95a335f6314f0f6b2a67a0c54"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/lepus.webp",
+      "bytes": 4418,
+      "sha256": "e26665cbcc33611a62610b2524fabadd97ce0dd3fb5194fe0ec8a3e4c092b455"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/libra.webp",
+      "bytes": 4484,
+      "sha256": "0f4de0b32ce9ba9f5714d1ad2d09cbd45fd6d0d1fcb85c515bd38066763b71d8"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/lupus.webp",
+      "bytes": 7868,
+      "sha256": "3133f72d6b53100d74953e07f0b093a46ee202b59dab9055cca906129f2c64e7"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/lynx.webp",
+      "bytes": 7536,
+      "sha256": "46adc6b2881978cd331fd0a7baa54375787649bc4230b1036294445352240a40"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/lyra.webp",
+      "bytes": 4528,
+      "sha256": "9e3bbd26639c768e41f5073edd3c346c2e1865535b9adbce4afc00db0b531dfb"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/mensa.webp",
+      "bytes": 5986,
+      "sha256": "1174bfa839b53d345142d8c6194132d5dc64a43dbfd90374c791101f74cd9833"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/microscopium.webp",
+      "bytes": 4374,
+      "sha256": "30004ce9de62d17165e2d92cbd857ef02f1fa95507e038adcc46d6c81d83e43c"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/monoceros.webp",
+      "bytes": 10996,
+      "sha256": "f63c776c09c7afc400a5797273e9ada6fb85464a7ca09c3381edc75886190fac"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/musca.webp",
+      "bytes": 6570,
+      "sha256": "299b6b924fb7c2913f3c157dd706e5c647e3b29789d18d235864e1875f98d77f"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/norma.webp",
+      "bytes": 1450,
+      "sha256": "225151e0872036d2ca826f5eaf4bcc3ee378996055c1518959ffc0ac556d5ac2"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/octans.webp",
+      "bytes": 6954,
+      "sha256": "1ea578243d1eabecf2c494febb1fb60986012e7d7569a9b77f53f70076fc54e1"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/ophiuchus.webp",
+      "bytes": 12846,
+      "sha256": "aa6192522943c76fdad1604716d29c6440692a7f55771c34167b410887744825"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/orion.webp",
+      "bytes": 17810,
+      "sha256": "189e13817e832f77f05a690f08509a5e73252ed8693d39bf225afaa36a96eddc"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/pavo.webp",
+      "bytes": 10012,
+      "sha256": "e6697e8b53f2296834855865f4e2675020a42a6ec68b957dd613a0a13d9ba672"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/pegasus.webp",
+      "bytes": 11288,
+      "sha256": "175965a1adcea646c4f6ead99cc196b066c822bd3ac3e9653b73413ba701626e"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/perseus.webp",
+      "bytes": 19620,
+      "sha256": "4e8bcce6d7b0fb473b71c3458f54954983df97bec5e78d2a319468b2bbcf284a"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/phoenix.webp",
+      "bytes": 7424,
+      "sha256": "3f1b646572081ace11302fb3023840f9b940b140d0efd5b9f155864a0e762e34"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/pictor.webp",
+      "bytes": 5628,
+      "sha256": "dc9de6ad19bdaa9094403894775b130f8f53feb5515bf3ffc5861bb4ac73be7e"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/pisces.webp",
+      "bytes": 9384,
+      "sha256": "e932aea19c5fb4978da820cca33673d731b8580862299ac9f5c7fe3877cd9407"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/piscis-austrinus.webp",
+      "bytes": 4798,
+      "sha256": "3a2bbaf7e249624b663904066f72c239e970f0f6cfba76a9ef910934bd6f3cb1"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/pyxis.webp",
+      "bytes": 7064,
+      "sha256": "2cc250858962eacb6d6b051e22522b356e4ce2e4a2e16d34f211d2a70e712a3a"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/reticulum.webp",
+      "bytes": 1946,
+      "sha256": "863a04aaf2aae884272417a0c3e1a8ee5092a0c50e202bd3f4c8799098b115e1"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/sagitta.webp",
+      "bytes": 1612,
+      "sha256": "b848c08967de9acc9b7e9ebcdfe5676e1cb99072d6a036c391083515c8db620d"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/sagittarius.webp",
+      "bytes": 10842,
+      "sha256": "54bb63dbbf78859415f7c5667325300188cb299ed2a67230624865b0b1a0eeba"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/scorpius.webp",
+      "bytes": 14616,
+      "sha256": "ee64498b867dd1ce883afd9034f6520a8639477d7b841117b2e319f21d7e475f"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/sculptor.webp",
+      "bytes": 5544,
+      "sha256": "42786a6f8c47b7e01a667fb1ffc21d68641ef1e93f4a83f6e48cef8fce0f9441"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/scutum.webp",
+      "bytes": 9644,
+      "sha256": "68896d3e7a407526e0edd38f47ec3c6a26fc7701b16af657b2e4c37c5f271319"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/sextans.webp",
+      "bytes": 2872,
+      "sha256": "70938fa5b4cbe76239ba483bc187e0d656123928480faecdccff47c17df4552a"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/taurus.webp",
+      "bytes": 9286,
+      "sha256": "b152c526f2c700d91e9495194c2dfedd71478d01f473bfb90886dc194bc0538d"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/telescopium.webp",
+      "bytes": 1568,
+      "sha256": "4a5779a10d8e3b31faf2763edee71cb31bc5bb0ced832a9c1567f15f97eeb911"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/triangulum-australe.webp",
+      "bytes": 920,
+      "sha256": "6ea5a02a0f5575a399674197ed27e34c4d0d56bbcead0e835110a2ecb5133a69"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/triangulum.webp",
+      "bytes": 832,
+      "sha256": "5ebb94e5e5e1ced5c4670b39f0574c53378b7e2712fdab94577325ad139a3396"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/tucana.webp",
+      "bytes": 2686,
+      "sha256": "cca58e32e53165716e267e3c00b4b671692ead021c7fe749a4213ff8aa981194"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/ursa-major.webp",
+      "bytes": 9010,
+      "sha256": "e5a691680d6921a5b26c00a2d3cd7b799ef3fd69eed7cff787cebe01641b9ef0"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/ursa-minor.webp",
+      "bytes": 2298,
+      "sha256": "a976a4f27d9f8435720479f5d0446f470040bae03b81c7a4cf994ac9ae6c291d"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/virgo.webp",
+      "bytes": 10922,
+      "sha256": "d9307d6790de3ef5b7711479e818ee9b9b1832bdd9c2a291d45790b68b56a4a9"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/volans.webp",
+      "bytes": 2550,
+      "sha256": "cadfa186367a163b69fe9dd46cf791d21142fac96b831907bb7bd968219372e4"
+    },
+    {
+      "path": "data/skycultures/western/illustrations/vulpecula.webp",
+      "bytes": 4026,
+      "sha256": "4b42f425081d1ccf9d19090ee8997f01ee29d2a11b60a8ea65cfc7eb676030e5"
+    },
+    {
+      "path": "data/skycultures/western/index.json",
+      "bytes": 132126,
+      "sha256": "05ad027697b715aff4675f1ac4191d660a365183ce9c58fae41ebede8c8a5bf6"
+    },
+    {
+      "path": "data/stars/Norder0/Dir0/Npix0.eph",
+      "bytes": 20267,
+      "sha256": "6ad6215d9bf223c3fc5b98ce59f55928ac06be5e02103c51ecd48e78ad33d6b3"
+    },
+    {
+      "path": "data/stars/Norder0/Dir0/Npix1.eph",
+      "bytes": 19332,
+      "sha256": "eeafc75e01ed026426c5608cf445a9d75be589741703b5bb6f31395d9cb8340f"
+    },
+    {
+      "path": "data/stars/Norder0/Dir0/Npix10.eph",
+      "bytes": 19095,
+      "sha256": "bb8a9a291e776972d1ece82f9e0dad89de8eb633ecbd4d8510f7baff43bc1d29"
+    },
+    {
+      "path": "data/stars/Norder0/Dir0/Npix11.eph",
+      "bytes": 18315,
+      "sha256": "99c22c4f00b3ace4479db536dc5ece1bb252f83c05f60850839f4e7097e8373a"
+    },
+    {
+      "path": "data/stars/Norder0/Dir0/Npix2.eph",
+      "bytes": 18088,
+      "sha256": "ac0309b6b257bf3995be02909eb9d261c00eb55122d23bd4da1b455759a74850"
+    },
+    {
+      "path": "data/stars/Norder0/Dir0/Npix3.eph",
+      "bytes": 19724,
+      "sha256": "89adb9f7967b8d3a241234d0108dee2713269eb15f02f45523e4f24dad01d603"
+    },
+    {
+      "path": "data/stars/Norder0/Dir0/Npix4.eph",
+      "bytes": 18626,
+      "sha256": "c8fa4ffe38cb9583e88b1d26af30c95ffd6c352444ac37806cd072d3532bdff7"
+    },
+    {
+      "path": "data/stars/Norder0/Dir0/Npix5.eph",
+      "bytes": 20634,
+      "sha256": "5343ef4777a15253ce34c6074a6fa389860e137335e9459d37597fa4f4530a47"
+    },
+    {
+      "path": "data/stars/Norder0/Dir0/Npix6.eph",
+      "bytes": 16425,
+      "sha256": "7b1d08801066cab0e512ef15660794610960641221f5938243cfdec167ce1c7c"
+    },
+    {
+      "path": "data/stars/Norder0/Dir0/Npix7.eph",
+      "bytes": 19494,
+      "sha256": "e54b09cb4a5c7f10fa70bf84cd137814e498d626ea58130ec5c287c53556f427"
+    },
+    {
+      "path": "data/stars/Norder0/Dir0/Npix8.eph",
+      "bytes": 16061,
+      "sha256": "19b4947d7ba610bc7273f40748f93152638eac0f1f6ebbc1f8747bc5c420ea78"
+    },
+    {
+      "path": "data/stars/Norder0/Dir0/Npix9.eph",
+      "bytes": 18131,
+      "sha256": "42a97e94af409904d2f011153f75a9944ef459d888c19288b841b5d741a49e1d"
+    },
+    {
+      "path": "data/stars/Norder1/Dir0/Npix0.eph",
+      "bytes": 1701,
+      "sha256": "510cd63ffdf651424e0e6397cb366e120af1b72f81dbf046981a19e0d8541d91"
+    },
+    {
+      "path": "data/stars/Norder1/Dir0/Npix1.eph",
+      "bytes": 1822,
+      "sha256": "e3c0615624629395b3e39b751ba6300e043791bf0cb1ff699df4355db8d66384"
+    },
+    {
+      "path": "data/stars/Norder1/Dir0/Npix12.eph",
+      "bytes": 2512,
+      "sha256": "f9f1634d1d49d8e1f9570463e8689a5f9756d22547155471f7967ab3d2e837ad"
+    },
+    {
+      "path": "data/stars/Norder1/Dir0/Npix13.eph",
+      "bytes": 2561,
+      "sha256": "2df17b87e8512968e3139df48e923f7e5d593e87087b36294c2ddcd4fd3b7b46"
+    },
+    {
+      "path": "data/stars/Norder1/Dir0/Npix14.eph",
+      "bytes": 3141,
+      "sha256": "ef1c7ae662904861f8af53edc8e4fcb5ee45e5265fb3cfc08233eba618717564"
+    },
+    {
+      "path": "data/stars/Norder1/Dir0/Npix15.eph",
+      "bytes": 2945,
+      "sha256": "a24edc8f5fe20dd2d52ba7c639edad8511c4d76752697b7ee63199b85c830d66"
+    },
+    {
+      "path": "data/stars/Norder1/Dir0/Npix2.eph",
+      "bytes": 2321,
+      "sha256": "7846f1fc1760bc44302ede8fb600969a24bf6cbfda1eb8084719f41be05b5a51"
+    },
+    {
+      "path": "data/stars/Norder1/Dir0/Npix20.eph",
+      "bytes": 2830,
+      "sha256": "92470d9c1c86cef389ca367917a6679e3d59c09f1c4ade74fa6632c1cc37ffe2"
+    },
+    {
+      "path": "data/stars/Norder1/Dir0/Npix21.eph",
+      "bytes": 2979,
+      "sha256": "0c999461ad1971e5d8e6c8eb43336995d6f643128d1172f8624e8512b8ebac13"
+    },
+    {
+      "path": "data/stars/Norder1/Dir0/Npix22.eph",
+      "bytes": 2451,
+      "sha256": "23a64ccc08390e7391799bfbc7dc62ce7dec9856e6c8538f3894cc51e313f04b"
+    },
+    {
+      "path": "data/stars/Norder1/Dir0/Npix23.eph",
+      "bytes": 3099,
+      "sha256": "fa6440c25d05e2be9b3860f437b5aea75ed725e2050250fc074989f42b86674d"
+    },
+    {
+      "path": "data/stars/Norder1/Dir0/Npix28.eph",
+      "bytes": 1546,
+      "sha256": "e4c433325cf3442788fe00a2ac0787bcbe112f02282aeb703ca5bc86a501a5f2"
+    },
+    {
+      "path": "data/stars/Norder1/Dir0/Npix29.eph",
+      "bytes": 1508,
+      "sha256": "68be0e6776ebf1b5cda92fa39d96d856f85896e6551f6c4f0f3c32d191211cf7"
+    },
+    {
+      "path": "data/stars/Norder1/Dir0/Npix3.eph",
+      "bytes": 2240,
+      "sha256": "d3e28538a51ec18f33261fec47488d79e2b9aca3b92011b6b5b735a6f228f872"
+    },
+    {
+      "path": "data/stars/Norder1/Dir0/Npix30.eph",
+      "bytes": 1209,
+      "sha256": "1b32dbb0b2cd1e3cf2d015bb22a522fbace162a31b8ea93eb879fe0671e2ee72"
+    },
+    {
+      "path": "data/stars/Norder1/Dir0/Npix31.eph",
+      "bytes": 1565,
+      "sha256": "33483a621a5687583cf508f08629bc5396aa5320b44c0f6017dbe3b3e95da30d"
+    },
+    {
+      "path": "data/stars/Norder1/Dir0/Npix36.eph",
+      "bytes": 3466,
+      "sha256": "0b78b9e67c1a3369b1b59045e77350065b06742a97bb3a71cb6befa1dac1eb4d"
+    },
+    {
+      "path": "data/stars/Norder1/Dir0/Npix37.eph",
+      "bytes": 3482,
+      "sha256": "edbb0165c273bbe1e85799efa1e639b53616b4c926bd3f025102ccf13af0f86b"
+    },
+    {
+      "path": "data/stars/Norder1/Dir0/Npix38.eph",
+      "bytes": 4256,
+      "sha256": "89df7261bfab41c2dd595f68d3eada51f749c9fa51613744b2f852a197ca4b4b"
+    },
+    {
+      "path": "data/stars/Norder1/Dir0/Npix39.eph",
+      "bytes": 2987,
+      "sha256": "30000bca4dc6841ff45b4b52e78336b5ab82e80cd6c17db5b641c16edd86c29a"
+    },
+    {
+      "path": "data/stars/Norder1/Dir0/Npix4.eph",
+      "bytes": 423,
+      "sha256": "98dba3626adca65612d7d051685bebdecfa0d6557c408870919f86524a3e10a3"
+    },
+    {
+      "path": "data/stars/Norder1/Dir0/Npix40.eph",
+      "bytes": 2882,
+      "sha256": "d243c2023d7f98dee1c93349f301d409f5b2761b9fcc2570300e8a9ffa195cb2"
+    },
+    {
+      "path": "data/stars/Norder1/Dir0/Npix41.eph",
+      "bytes": 2731,
+      "sha256": "f361efed98d0f8d8207fd0e2353fcf665217facb6f358f530383820ed11cce33"
+    },
+    {
+      "path": "data/stars/Norder1/Dir0/Npix42.eph",
+      "bytes": 2753,
+      "sha256": "95f3d2c549434f3585ce40ec32e83172e7924659f163df62cdf957871cbb7368"
+    },
+    {
+      "path": "data/stars/Norder1/Dir0/Npix43.eph",
+      "bytes": 1710,
+      "sha256": "170ec363feb62d1261bcdabed39566d245c0b335734297c5cc5d7fd1e13e1f04"
+    },
+    {
+      "path": "data/stars/Norder1/Dir0/Npix44.eph",
+      "bytes": 867,
+      "sha256": "8057fba8ab63afeae23ec17cdc438895df7bc57e1497ab9455e11c61059817e1"
+    },
+    {
+      "path": "data/stars/Norder1/Dir0/Npix45.eph",
+      "bytes": 664,
+      "sha256": "b21b3cb24752607c4febfb7e219d000ec80c76e185991c314b628f8ae333f8b5"
+    },
+    {
+      "path": "data/stars/Norder1/Dir0/Npix46.eph",
+      "bytes": 925,
+      "sha256": "5695bbbc828ef7f6e85ea6d9bfdc2f88773a2f023b3f1f8d95d798edca3998b0"
+    },
+    {
+      "path": "data/stars/Norder1/Dir0/Npix47.eph",
+      "bytes": 774,
+      "sha256": "a51c715b34d4337885ca4a61f0f7556f6f1814861f4b1cd595c5dee3835c3df0"
+    },
+    {
+      "path": "data/stars/Norder1/Dir0/Npix5.eph",
+      "bytes": 373,
+      "sha256": "944e59b8f64fb8e1b6a336669191fb9079b6252aa03b04c795c9c8ecfe90d988"
+    },
+    {
+      "path": "data/stars/Norder1/Dir0/Npix6.eph",
+      "bytes": 477,
+      "sha256": "fd3fd61f72abf2af37fa9aa73f53109da2d96543f2ea7ec6e716a031d3b31402"
+    },
+    {
+      "path": "data/stars/Norder1/Dir0/Npix7.eph",
+      "bytes": 478,
+      "sha256": "228f26a5f34785d28e8af4d164f2976f7a800bdbe594094d3884acf6fd01ad4e"
+    },
+    {
+      "path": "data/stars/properties",
+      "bytes": 128,
+      "sha256": "4b0ee9fe8f3d5cb59377c2d397314e520731d6899050d4cf5944cbe014c01835"
+    },
+    {
+      "path": "index.html",
+      "bytes": 1220,
+      "sha256": "44d46c95194730267df51055799dfab91033dff0a2f41b1bbdee1e7bca6d84d6"
+    },
+    {
+      "path": "LICENSE-AGPL-3.0.txt",
+      "bytes": 35184,
+      "sha256": "e0eedba615d5cd1b986afb6c5b3a4b1ae33713e7e9dc74d19daec5e3221f9d2e"
+    },
+    {
+      "path": "NOTICE.txt",
+      "bytes": 4694,
+      "sha256": "e78921407cb42095278656902dd1de5c4873862f2873be7f2d68395363ebb045"
+    },
+    {
+      "path": "REPRODUCE.md",
+      "bytes": 7373,
+      "sha256": "e95a065b5f75b987af60d30e184c78fe155a4c1888d3b447129440a159d631f6"
+    },
+    {
+      "path": "runtime.js",
+      "bytes": 19294,
+      "sha256": "2d3e984f367000960551670cf113f1267f21396ae0807231fc8009d376227bc4"
+    },
+    {
+      "path": "source.html",
+      "bytes": 2878,
+      "sha256": "27fa8c979ac605b1950be777137b06c53d8f3c9a33b0a62cb01e8916884ac780"
+    },
+    {
+      "path": "vendor/stellarium-web-engine.js",
+      "bytes": 68654,
+      "sha256": "10a4b7b1c53eb0b3bfcc801845660b0726edf012a147df37f07bcebfdeaab22f"
+    },
+    {
+      "path": "vendor/stellarium-web-engine.wasm",
+      "bytes": 1210505,
+      "sha256": "d964cb5c6c0733d27fb355b344ff2b4dc95bb13138f7b01d4208bc67ce1a583d"
+    },
+    {
+      "path": "vendor/TravelSkySans-OFL.txt",
+      "bytes": 4388,
+      "sha256": "1c05c68c34f9708415aada51f17e1b0092d2cea709bf4a94cd38114f9e73d7d9"
+    },
+    {
+      "path": "vendor/TravelSkySans-Regular.ttf",
+      "bytes": 109088,
+      "sha256": "719c40aaca0af2172649c1e640926c576757f5075bfade2e04849a6953ee22ab"
+    },
+    {
+      "path": "vendor/TravelSkySans-Semibold.ttf",
+      "bytes": 109040,
+      "sha256": "c22dacecbb0a9545c30027a9101f4efa19b01c37615ef545bc5771877f837cdc"
+    }
+  ],
+  "sourceArchive": {
+    "path": "source.zip",
+    "bytes": 16011698,
+    "sha256": "12698c290a53a409e0a5af75b7dbd35a69add0babc296456ea2e9982c033842f",
+    "entries": 663
+  }
+}

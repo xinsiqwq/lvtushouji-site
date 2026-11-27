@@ -1,0 +1,24 @@
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: SAMEORIGIN
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), payment=(), usb=(), geolocation=(self)
+  Content-Security-Policy: default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; form-action 'self'; script-src 'self' 'wasm-unsafe-eval' 'sha256-Wu8yh8Y+JyrAH3BeQPQ7nVKhV7x191dMIG8H9wYsE+4='; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'
+
+/fonts/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/cosmos/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/sandstorm/lib/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/sandstorm/js/*
+  Cache-Control: public, max-age=3600, stale-while-revalidate=86400
+
+/sandstorm/css/*
+  Cache-Control: public, max-age=3600, stale-while-revalidate=86400

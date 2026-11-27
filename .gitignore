@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.cache/
+.wrangler/
+.dev.vars
+.env*
+!.dev.vars.example
+test-results/
+playwright-report/
+blob-report/
+*.local
+.local-console/
+tests/e2e/.artifacts/
+wrangler.production.jsonc
+CHECKPOINT.md

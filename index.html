@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <script>
+      (function () {
+        try {
+          var v = localStorage.getItem('travel:color-scheme');
+          var meta = document.querySelector('meta[name="color-scheme"]');
+          if (v === 'light' || v === 'dark') {
+            if (meta) meta.setAttribute('content', v);
+            document.documentElement.dataset.theme = v;
+          } else {
+            if (meta) meta.setAttribute('content', 'light dark');
+            delete document.documentElement.dataset.theme;
+          }
+        } catch (e) {}
+      })();
+    </script>
+    <title>旅途手记 · 把走过的山海与夜空收进一册</title>
+    <meta name="description" content="个人门面、旅途影像地图、实时星图与文件密匣。" />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='11' fill='none' stroke='%231A73E8' stroke-width='2'/%3E%3Ccircle cx='16' cy='16' r='2.5' fill='%239A5B42'/%3E%3C/svg%3E"
+    />
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="/fonts/inter-400.woff2" />
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="/fonts/inter-500.woff2" />
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="/fonts/noto-sans-sc-400-core.woff2" />
+    <link rel="preload" as="font" type="font/woff2" crossorigin href="/fonts/noto-sans-sc-500-core.woff2" />
+    <link rel="stylesheet" href="/fonts/fonts.css" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/client/main.tsx"></script>
+  </body>
+</html>
