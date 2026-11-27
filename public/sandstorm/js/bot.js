@@ -23,7 +23,7 @@ class BotBrain {
     this.look = new THREE.Vector3(); this.hasLook = false;
     this.task = null; this.hearPos = new THREE.Vector3(); this.hearT = -99;
     this.alertBy = null; this.alertT = -99;
-    this.passive = false; this.holdT = 0; this.crouchSpray = Math.random() < 0.35;
+    this.passive = false; this.staticDummy = false; this.holdT = 0; this.crouchSpray = Math.random() < 0.35;
     this.sweep = 0; this.wantScope = false; this.dummyT = 0;
     this.nade = null; this.nadeUsedOn = null;
     this._e = new THREE.Vector3(); this._p = new THREE.Vector3(); this._d = new THREE.Vector3();
@@ -74,6 +74,15 @@ class BotBrain {
   hear(pos) {
     if (this.target && this.targetVisible) return;
     this.hearPos.copy(pos); this.hearT = this.g.time;
+  }
+  onPing(pos, isDanger) {
+    const a = this.a;
+    if (!a.alive || this.passive || !pos) return;
+    if (this.target && this.targetVisible) return;
+    if (this.task && this.task.urgent && (this.task.type === 'plant' || this.task.type === 'defuse')) return;
+    if (a.pos.distanceTo(pos) > 42) return;
+    this.hearPos.copy(pos);
+    this.hearT = this.g.time + (isDanger ? 2 : 0);
   }
   onDamaged(attacker) {
     if (!attacker || attacker.team === this.a.team) return;
@@ -148,10 +157,34 @@ class BotBrain {
     else if (this.target && g.time - this.lastSeenT < 5 && !(this.task && this.task.type === 'hold' && Math.random() < 0.6)) {
       goal = this.lastKnown; this.state = 'hunt';
       const d = a.pos.distanceTo(this.lastKnown);
-      if (a.inv.nades.he && this.nadeUsedOn !== this.target && d > 7 && d < 24 && Math.random() < 0.25) { if (this.planNade('he', this.lastKnown)) this.nadeUsedOn = this.target; }
+      if (this.nadeUsedOn !== this.target && d > 7 && d < 24) {
+        if (a.inv.nades.molotov && Math.random() < 0.32) {
+          if (this.planNade('molotov', this.lastKnown)) this.nadeUsedOn = this.target;
+        } else if (a.inv.nades.he && Math.random() < 0.25) {
+          if (this.planNade('he', this.lastKnown)) this.nadeUsedOn = this.target;
+        }
+      }
     }
-    else if (g.time - this.hearT < 4 && (!this.task || this.task.type !== 'hold')) { goal = this.hearPos; this.state = 'investigate'; }
-    else { goal = this.taskGoal(); this.state = 'task'; }
+    else if (g.time - this.hearT < 4 && (!this.task || this.task.type !== 'hold' || this.hearT > g.time)) { goal = this.hearPos; this.state = 'investigate'; }
+    else {
+      goal = this.taskGoal(); this.state = 'task';
+      if (a.inv.nades.molotov && !this.nade && g.mode && (g.mode.id === 'comp' || g.mode.id === 'retake')) {
+        const B = g.mode.bomb;
+        if (B && B.planted && !B.defused && !B.exploded) {
+          const db = a.pos.distanceTo(B.pos);
+          if (a.team === 'T' && B.defuser && db > 6 && db < 24 && Math.random() < 0.65) {
+            this.planNade('molotov', B.pos);
+          } else if (a.team === 'CT' && db > 8 && db < 22 && Math.random() < 0.2 && g.map.holds && g.map.holds[B.site] && g.map.holds[B.site].length) {
+            const h = pick(g.map.holds[B.site]);
+            if (h && h.pos) this.planNade('molotov', h.pos);
+          }
+        } else if (this.task && this.task.type === 'route' && !this.task.molyDone && this.task.pts && this.task.pts.length >= 2 && this.task.i >= this.task.pts.length - 2) {
+          this.task.molyDone = true;
+          const dest = this.task.pts[this.task.pts.length - 1];
+          if (dest && a.pos.distanceTo(dest) > 7 && a.pos.distanceTo(dest) < 23 && Math.random() < 0.55) this.planNade('molotov', dest);
+        }
+      }
+    }
     if (goal) this.setGoal(goal);
   }
   taskGoal() {
@@ -175,6 +208,33 @@ class BotBrain {
     }
   }
 
+  // ---------------- 燃烧弹火焰规避 ----------------
+  avoidFire(c) {
+    if (typeof Effects === 'undefined' || !Effects.fires || !Effects.fires.length) return false;
+    const a = this.a;
+    let fx = 0, fz = 0, inFire = false;
+    for (const f of Effects.fires) {
+      if (!f || f.active === false || !f.pos) continue;
+      if (Math.abs(a.pos.y - f.pos.y) > 2.0) continue;
+      const dx = a.pos.x - f.pos.x, dz = a.pos.z - f.pos.z;
+      const d = Math.hypot(dx, dz);
+      const lim = (f.r || 3.3) + 0.5;
+      if (d < lim) {
+        inFire = true;
+        if (d > 1e-3) { fx += dx / d; fz += dz / d; }
+        else { fx += -Math.sin(a.yaw); fz += -Math.cos(a.yaw); }
+      }
+    }
+    if (!inFire) return false;
+    const fl = Math.hypot(fx, fz) || 1;
+    fx /= fl; fz /= fl;
+    const sy = Math.sin(a.yaw), cy = Math.cos(a.yaw);
+    c.fwd = fx * -sy + fz * -cy;
+    c.side = fx * cy + fz * -sy;
+    c.duck = false;
+    return true;
+  }
+
   // ---------------- 每 tick ----------------
   tick(dt) {
     const a = this.a;
@@ -192,21 +252,28 @@ class BotBrain {
       a.yaw = wrapAngle(a.yaw + clamp(wrapAngle(n.yaw - a.yaw), -6 * dt, 6 * dt));
       a.pitch += clamp(n.pitch - a.pitch, -4 * dt, 4 * dt);
       this.runNade(dt);
+      this.avoidFire(c);
       return;
     }
     if (this.nade && combat) this.nade = null;
     this.aim(dt, combat);
     if (combat) { this.combatMove(dt); this.shoot(dt); }
     else {
-      c.attack = false; c.duck = false; c.use = false;
-      if (this.task && this.task.type === 'defuse' && this.task.pos.distanceTo(a.pos) < 1.4) { c.fwd = 0; c.side = 0; c.use = true; return; }
+      c.attack = false; c.attack2 = false; c.duck = false; c.use = false;
+      if (this.task && this.task.type === 'defuse' && this.task.pos.distanceTo(a.pos) < 1.4) {
+        if (!this.avoidFire(c)) { c.fwd = 0; c.side = 0; c.use = true; }
+        return;
+      }
       if (this.task && this.task.type === 'plant' && this.g.map.inSite(a.pos) && a.inv.c4 && this.task.pos.distanceTo(a.pos) < 2.5) {
-        c.fwd = 0; c.side = 0;
-        if (a.slot !== 'c4') c.slotReq = 'c4'; else c.attack = true;
+        if (!this.avoidFire(c)) {
+          c.fwd = 0; c.side = 0;
+          if (a.slot !== 'c4') c.slotReq = 'c4'; else c.attack = true;
+        }
         return;
       }
       if (a.slot === 'c4' && !this.task) c.slotReq = a.bestSlot();
       this.navigate(dt);
+      this.avoidFire(c);
       // 空闲时换弹 / 切回主武器
       const w = a.weapon;
       if (w && w.def.mag && w.mag < w.def.mag * 0.5 && w.reserve > 0 && !a.reloading && this.g.time - this.lastSeenT > 1.5) c.reload = true;
@@ -265,18 +332,23 @@ class BotBrain {
     const a = this.a, c = a.cmd, def = a.def;
     c.fwd = 0;
     const dist = this.target.pos.distanceTo(a.pos);
-    if (a.sliding) { c.fwd = 1; c.side = 0; return; }   // 滑铲中保持方向
+    if (a.sliding) { c.fwd = 1; c.side = 0; this.avoidFire(c); return; }   // 滑铲中保持方向
     // 刚发现敌人且正在全速奔跑：滑铲抢位（爆发式滑铲）
-    if (!this.slideDecided) { this.slideDecided = true; if (this.slideCheck(dist > 6 && dist < 30 ? 0.55 : 0)) { c.fwd = 1; c.side = 0; return; } }
+    if (!this.slideDecided) { this.slideDecided = true; if (this.slideCheck(dist > 6 && dist < 30 ? 0.55 : 0)) { c.fwd = 1; c.side = 0; this.avoidFire(c); return; } }
     if (def.type === 'sniper') {
       c.side = 0;
       if (!a.scoped && dist > 7 && this.g.time > a.nextFire - 0.1 && !a.reloading) c.attack2Pressed = true;
       this.counterStrafe(c);
+      this.avoidFire(c);
       return;
     }
     if (def.type === 'knife' || def.type === 'grenade' || def.type === 'c4') {
       if (a.inv.primary || a.inv.secondary) c.slotReq = a.bestSlot();
-      else { c.fwd = 1; c.side = 0; }
+      else {
+        c.fwd = 1; c.side = 0;
+        if (def.type === 'knife') c.sprint = true;
+      }
+      this.avoidFire(c);
       return;
     }
     this.strafeT -= dt;
@@ -295,6 +367,7 @@ class BotBrain {
     else this.counterStrafe(c);
     if (dist > 45 && def.type === 'pistol') c.fwd = 0.6;
     c.duck = this.crouchSpray && a.recoilIdx > 3 && dist > 10;
+    this.avoidFire(c);
   }
   // 满足条件则按下蹲触发滑铲（实际是否滑出由 Actor 物理判定：需接近满速且朝前）
   slideCheck(p, wx, wz, room) {
@@ -323,13 +396,21 @@ class BotBrain {
 
   shoot(dt) {
     const a = this.a, g = this.g, c = a.cmd, def = a.def;
-    c.attack = false;
+    c.attack = false; c.attack2 = false;
+    // 军备竞赛终阶黄金刀：近身重刺 / 轻划
+    if (def.type === 'knife' && !a.inv.primary && !a.inv.secondary) {
+      const dist = this.target.pos.distanceTo(a.pos);
+      if (dist <= 1.5) c.attack2 = true;
+      else if (dist <= 2.1) c.attack = true;
+      return;
+    }
     if (g.time < this.acquireT + this.d.react) return;
     if (a.blind > 0.4) { if (Math.random() < 0.5 * dt * 10) c.attack = true; return; }
     if (!a.weapon || !def.damage) return;
     if (a.weapon.mag === 0) { c.reload = true; return; }
     if (a.reloading) return;
-    if (this.burstPause > 0) { if (def.auto) return; }
+    const autoFire = def.auto && !a.weapon.burst;
+    if (this.burstPause > 0) { if (autoFire) return; }
     const eye = a.eyePos(this._e);
     const p = g.aimPoint(this.target, this.aimPart, this._p);
     const dx = p.x - eye.x, dy = p.y - eye.y, dz = p.z - eye.z, dist = Math.hypot(dx, dy, dz);
@@ -344,7 +425,7 @@ class BotBrain {
     if (def.scope && !a.scoped && dist > 7) return;
     if (err > tol || !accurate) return;
     if (g.teammateInLine(a, eye, p)) return;
-    if (def.auto) {
+    if (autoFire) {
       c.attack = true;
       if (this.sprayStart === 0) this.sprayStart = a.recoilIdx;
       if (a.recoilIdx >= this.burstLen) {
@@ -392,23 +473,27 @@ class BotBrain {
     }
   }
 
-  // 靶场假人：原地 AD 晃动
+  // 靶场假人：原地 AD 晃动（staticDummy=true 时静止站立面向玩家）
   dummy(dt) {
     const a = this.a, c = a.cmd;
-    c.attack = false; c.fwd = 0;
-    this.dummyT -= dt;
-    if (this.dummyT <= 0) {
-      this.dummyT = rand(0.3, 1.1);
-      this.strafeDir = Math.random() < 0.45 ? 0 : (Math.random() < 0.5 ? -1 : 1);
-      const R = _v1.set(Math.cos(a.yaw), 0, -Math.sin(a.yaw));
-      if (this.strafeDir && this.task && this.task.pos) {
-        const off = _v2.subVectors(a.pos, this.task.pos);
-        if (Math.abs(off.x * R.x + off.z * R.z) > 2.5) this.strafeDir = -Math.sign(off.x * R.x + off.z * R.z);
+    c.attack = false; c.attack2 = false; c.fwd = 0;
+    if (this.staticDummy) {
+      c.side = 0; c.duck = false; c.jumpPressed = false;
+    } else {
+      this.dummyT -= dt;
+      if (this.dummyT <= 0) {
+        this.dummyT = rand(0.3, 1.1);
+        this.strafeDir = Math.random() < 0.45 ? 0 : (Math.random() < 0.5 ? -1 : 1);
+        const R = _v1.set(Math.cos(a.yaw), 0, -Math.sin(a.yaw));
+        if (this.strafeDir && this.task && this.task.pos) {
+          const off = _v2.subVectors(a.pos, this.task.pos);
+          if (Math.abs(off.x * R.x + off.z * R.z) > 2.5) this.strafeDir = -Math.sign(off.x * R.x + off.z * R.z);
+        }
+        if (Math.random() < 0.12) c.jumpPressed = true;
+        c.duck = Math.random() < 0.15;
       }
-      if (Math.random() < 0.12) c.jumpPressed = true;
-      c.duck = Math.random() < 0.15;
+      c.side = this.strafeDir;
     }
-    c.side = this.strafeDir;
     const P = this.g.player;
     if (P) { const dx = P.pos.x - a.pos.x, dz = P.pos.z - a.pos.z; a.yaw = yawOf(dx, dz); }
   }

@@ -29,8 +29,21 @@
     <div id="timerBox"><div id="timer">1:55</div><div id="bombIcon" class="hidden">C4</div></div>
     <div class="side t"><div class="score" id="scoreT">0</div><div class="alive" id="aliveT"></div></div>
   </div>
+  <div id="arBar" class="hidden"></div>
 
   <div id="killfeed"></div>
+  <div id="rangePanel" class="hidden">
+    <div class="rp-head">
+      <span class="rp-title">弹道落点分析</span>
+      <span class="rp-acc" id="rpAcc">精准度 --</span>
+    </div>
+    <div class="rp-canvas-wrap">
+      <canvas id="sprayCanvas" width="140" height="140"></canvas>
+    </div>
+    <div class="rp-challenge" id="rpChallenge"></div>
+    <div class="rp-badges" id="rpBadges"></div>
+    <div class="rp-keys">T 30s挑战 · J 动/静靶 · K 弹着标记 · L 清屏</div>
+  </div>
   <div id="center"></div>
   <div id="subcenter"></div>
 
@@ -40,10 +53,14 @@
   </div>
 
   <div id="weaponbar"></div>
-  <div id="ammobox"><div id="wname">AK-47</div><div><span id="mag">30</span><span id="reserve">/ 90</span></div></div>
+  <div id="ammobox">
+    <div class="ammo-top"><span id="fireMode" class="hidden"></span><div id="wname">AK-47</div></div>
+    <div><span id="mag">30</span><span id="reserve">/ 90</span></div>
+  </div>
 
   <div id="progress" class="hidden"><div class="label" id="progressLabel">安放炸弹</div><div class="bar"><i id="progressBar"></i></div></div>
   <div id="netgraph"></div>
+  <div id="dmgSummary" class="hidden"></div>
   <div id="deathinfo" class="hidden"></div>
   <div id="spectate" class="hidden"></div>
 </div>
@@ -57,7 +74,7 @@
   <div class="menu-inner">
     <div class="brand">
       <div class="logo">沙暴行动</div>
-      <div class="sub">SANDSTORM · 3 张战术地图 · 16 款武器皮肤</div>
+      <div class="sub">SANDSTORM v3.0 · 4 张战术地图 · 17 款武器 · 9 款皮肤</div>
     </div>
     <div id="touchNotice" class="touch-notice hidden" role="note">
       <div class="touch-notice-copy">
@@ -73,14 +90,21 @@
         <div class="ct">爆破竞技</div><div class="cd">5v5 回合制 · 经济系统 · 安放/拆除 C4 · 先胜 9 局</div>
       </div>
       <div class="card" data-mode="tdm">
-        <div class="ct">团队死斗</div><div class="cd">即时复活 · 自由购买 · 先达 60 击杀</div>
+        <div class="ct">团队死斗</div><div class="cd">即时复活 · 自由购买 · 先达 50 击杀</div>
+      </div>
+      <div class="card" data-mode="armsrace">
+        <div class="ct">军备竞赛</div><div class="cd">12 阶武器进阶 · 黄金刀终结</div>
+      </div>
+      <div class="card" data-mode="retake">
+        <div class="ct">残局回防</div><div class="cd">40s 已下包残局 · 即时配装攻防</div>
       </div>
       <div class="card" data-mode="range">
-        <div class="ct">靶场训练</div><div class="cd">移动靶 · 弹道练习 · 速度/散布实时显示</div>
+        <div class="ct">靶场训练</div><div class="cd">弹道落点分析 · 30s 极速反应挑战</div>
       </div>
     </div>
     <div class="opts">
-      <div class="opt"><label>战术地图</label><div class="seg" id="optMap"><b data-v="dust" class="on">炽沙小镇</b><b data-v="frost">极地科研站</b><b data-v="harbor">黄昏货运港</b></div></div>
+      <div class="opt"><label>战术地图</label><div class="seg" id="optMap"><b data-v="dust" class="on">炽沙小镇</b><b data-v="frost">极地科研站</b><b data-v="harbor">黄昏货运港</b><b data-v="mars" class="mars-pill">赤岩前哨</b></div></div>
+      <div class="opt"><label>重力环境</label><div class="seg" id="optGrav"><b data-v="0" class="on">标准重力</b><b data-v="1" class="mars-pill">火星低重力 0.48g</b></div></div>
       <div class="opt"><label>阵营</label><div class="seg" id="optTeam"><b data-v="CT" class="on">反恐精英 CT</b><b data-v="T">恐怖分子 T</b></div></div>
       <div class="opt"><label>机器人难度</label><div class="seg" id="optDiff"><b data-v="easy">新兵</b><b data-v="normal" class="on">老兵</b><b data-v="hard">精英</b><b data-v="cosmic">宇宙级</b></div></div>
       <div class="opt"><label>每队人数</label><div class="seg" id="optSize"><b data-v="1">1</b><b data-v="2">2</b><b data-v="3">3</b><b data-v="4">4</b><b data-v="5" class="on">5</b></div></div>
@@ -191,7 +215,10 @@
       <div class="arm-stage" id="armStage">
         <div class="arm-hud">
           <div class="arm-wname" id="armTitle">AK-47</div>
-          <div class="arm-sbadge" id="armSkinBadge">原厂战术</div>
+          <div class="arm-hud-badges">
+            <div class="arm-sbadge" id="armSkinBadge">原厂战术</div>
+            <div class="arm-st hidden" id="armStatTrak"></div>
+          </div>
           <div class="arm-tip">按住左键拖拽 360° 检视 · 滚轮缩放</div>
         </div>
         <div class="arm-stage-btns">
@@ -227,17 +254,19 @@
     <div class="ptitle">操作说明</div>
     <div class="helpgrid">
       <div><kbd>W A S D</kbd> 移动</div><div><kbd>鼠标</kbd> 瞄准 / <kbd>左键</kbd> 开火（未锁定时支持拖拽转头）</div>
-      <div><kbd>Shift</kbd> 静步（可改为冲刺）</div><div><kbd>右键</kbd> 狙击开镜 / 刀重击 / 低抛</div>
+      <div><kbd>Shift</kbd> 静步（可改为冲刺）</div><div><kbd>右键</kbd> 狙击开镜 / Glock·FAMAS 三连发 / 刀重击 / 低抛</div>
       <div><kbd>Ctrl</kbd> 或 <kbd>C</kbd> 蹲下</div><div><kbd>R</kbd> 换弹　<kbd>F</kbd> 检视</div>
       <div><b>疾跑中按 <kbd>C</kbd>/<kbd>Ctrl</kbd> = 滑铲</b></div><div><kbd>1-5</kbd> 切枪　<kbd>Q</kbd> 快速切换</div>
       <div><kbd>空格</kbd> 跳跃（滑铲中起跳保留惯性）</div><div><kbd>E</kbd> 拾取 / 安放 / 拆弹</div>
+      <div><kbd>Z</kbd> 或 <kbd>中键</kbd> 战术标点（瞄准敌人为红色警报）</div><div><kbd>V</kbd> 或 <kbd>空格</kbd> 观战第一 / 第三人称切换</div>
       <div><kbd>B</kbd> 购买菜单 · <kbd>F1</kbd> 快购全甲步枪 · <kbd>F2</kbd> 复购上局</div><div><kbd>G</kbd> 丢弃武器</div>
-      <div><kbd>Tab</kbd> 计分板</div><div><kbd>Esc</kbd> 暂停 / 军械库换肤</div>
+      <div><kbd>Tab</kbd> 计分板（含伤害 / 爆头统计）</div><div><kbd>Esc</kbd> 暂停 / 军械库换肤</div>
+      <div><b>靶场 2.0：</b><kbd>T</kbd> 30s 反应挑战 · <kbd>J</kbd> 动/静靶</div><div><kbd>K</kbd> 开关 3D 弹着标记 · <kbd>L</kbd> 清空弹痕与弹道图</div>
     </div>
     <div class="helptext">
-      <p><b>射击手感要点：</b>移动中射击散布极大——松开方向键或按反方向键“急停”后再开枪。步枪连发有固定弹道（AK 先上后左再右），也可在设置开启「准星跟随弹道」辅助压枪。</p>
-      <p><b>新武器与穿透：</b>Nova 霰弹枪支持<b>逐发装弹并可开火打断</b>；SSG 08 鸟狙拥有极高空中跳狙精度；M4A1-S 自带消音与低后坐；可在「军械库」为 16 款武器装备 9 种程序化 PBR 皮肤。</p>
-      <p><b>滑铲与滚轮跳：</b>以接近满速奔跑时按蹲可获得爆发速度并压低身位；滑铲中起跳保留惯性，设置中可将滚轮设为跳跃方便连跳。</p>
+      <p><b>射击手感与三连发：</b>移动中射击散布极大——松开方向键或按反方向键“急停”后再开枪。步枪连发有固定弹道（AK 先上后左再右），可在设置开启「准星跟随弹道」辅助压枪；<b>Glock-18</b> 与新增 CT 步枪 <b>FAMAS</b> 按右键可切换紧凑三连发。</p>
+      <p><b>燃烧弹与烟雾灭火：</b>新增投掷物<b>燃烧弹</b>落地即铺开 7.5 秒渐强伤害火海用于封点逼位；向火海投掷<b>烟雾弹</b>可瞬间扑灭火焰并腾起浓密白汽！</p>
+      <p><b>武器、StatTrak 与火星低重力：</b>军械库共 17 款武器支持 9 种程序化 PBR 皮肤并自动记录 <b>StatTrak 生涯击杀</b>；在「赤岩前哨」或任意地图开启<b>火星低重力 (0.48g)</b> 可体验高抛滞空身法与更温和的坠落保护。滑铲中起跳保留惯性，滚轮可设为跳跃辅助连跳。</p>
     </div>
     <div class="row-actions"><button id="btnHelpClose" class="primary">知道了</button></div>
   </div>

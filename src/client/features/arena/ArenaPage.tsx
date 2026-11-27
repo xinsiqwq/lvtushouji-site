@@ -5,8 +5,8 @@ type SandstormMessage =
   | { type: 'sandstorm:navigate'; to?: unknown }
   | { type: 'sandstorm:room'; code?: unknown };
 
-const ALLOWED_MODES = new Set(['comp', 'tdm', 'range']);
-const ALLOWED_MAPS = new Set(['dust', 'frost', 'harbor']);
+const ALLOWED_MODES = new Set(['comp', 'tdm', 'range', 'armsrace', 'retake']);
+const ALLOWED_MAPS = new Set(['dust', 'frost', 'harbor', 'mars']);
 
 function normalizeRoomCode(raw: string | null | undefined): string {
   if (!raw) return '';
@@ -24,6 +24,7 @@ function buildSandstormSrc(search: string): string {
   const rawMap = (incoming.get('map') || '').trim().toLowerCase();
   const room = normalizeRoomCode(incoming.get('room'));
   const rawAutostart = (incoming.get('autostart') || '').trim().toLowerCase();
+  const rawLowGrav = (incoming.get('lowgrav') || '').trim().toLowerCase();
   const rawTest = (incoming.get('test') || '').trim().toLowerCase();
 
   if (ALLOWED_MODES.has(rawMode)) {
@@ -41,6 +42,10 @@ function buildSandstormSrc(search: string): string {
 
   if (rawAutostart === '1' || rawAutostart === 'true') {
     forwarded.set('autostart', '1');
+  }
+
+  if (rawLowGrav === '1' || rawLowGrav === 'true') {
+    forwarded.set('lowgrav', '1');
   }
 
   if (room.length === 6) {

@@ -1,6 +1,6 @@
 'use strict';
 // ======================================================================
-//  map.js —— 多地图系统（炽沙小镇 / 极地科研站 / 黄昏货运港）
+//  map.js —— 多地图系统（炽沙小镇 / 极地科研站 / 黄昏货运港 / 赤岩前哨）
 //           网格雕刻 + 贪心合并建筑 + 顶点 AO 烘焙 + 俯视雷达生成
 // ======================================================================
 const MapGen = (() => {
@@ -17,13 +17,14 @@ const MapGen = (() => {
   };
   const FACE_KEYS = ['px', 'nx', 'pz', 'nz', 'py', 'ny'];
   const TEXS = {
-    sand: 4, snow: 4, ice: 4, asphalt: 4,
+    sand: 4, snow: 4, ice: 4, asphalt: 4, mars_sand: 4, mars_rock: 4, mars_panel: 4,
     sandstone: 4, plaster: 4, concrete: 4, tile: 4, metal: 3, beam: 2.5, trim: 2,
     sack: 1.2, paint: 2, glass: 2, darkmetal: 2, rubber: 2, cloth: 2, lamp: 1,
   };
   const FACEUV = { crate: true, door: true };
   const PHYS_MAT = {
     sand: 'sand', snow: 'snow', ice: 'ice', asphalt: 'asphalt',
+    mars_sand: 'mars_sand', mars_rock: 'mars_rock', mars_panel: 'mars_panel',
     sandstone: 'stone', plaster: 'plaster', concrete: 'concrete', tile: 'tile',
     crate: 'wood', metal: 'metal', door: 'wood', beam: 'wood', trim: 'stone',
     sack: 'sand', paint: 'metal', darkmetal: 'metal', glass: 'metal', rubber: 'wood', cloth: 'wood',
@@ -56,6 +57,15 @@ const MapGen = (() => {
     { mat: 'concrete', tint: [0.82, 0.78, 0.72] },
     { mat: 'concrete', tint: [0.76, 0.78, 0.82] },
     { mat: 'metal', tint: [0.48, 0.58, 0.48] },
+  ];
+
+  const MARS_STYLES = [
+    { mat: 'mars_rock', tint: [0.98, 0.90, 0.84] },
+    { mat: 'mars_panel', tint: [0.96, 0.94, 0.92] },
+    { mat: 'mars_rock', tint: [0.88, 0.78, 0.72] },
+    { mat: 'mars_panel', tint: [0.88, 0.90, 0.94] },
+    { mat: 'mars_rock', tint: [1.02, 0.86, 0.76] },
+    { mat: 'metal', tint: [0.76, 0.44, 0.28] },
   ];
 
   const MAPS = [
@@ -107,6 +117,22 @@ const MapGen = (() => {
         tintHi: [0.022, 0.006, -0.014], tintLo: [0.008, -0.004, 0.016],
       },
     },
+    {
+      id: 'mars',
+      name: '赤岩前哨',
+      en: 'ARES OUTPOST · MARS',
+      desc: '火星赤铁矿峡谷与加压科研穹顶 · 橘红沙暴天穹',
+      weather: 'mars',
+      lighting: {
+        el: 22, az: 240,
+        exposure: 0.50, env: 0.44, sun: 3.2, sunColor: 0xffb88c,
+        hemi: 0.16, hemiSky: 0xd98a6c, hemiGround: 0x6e311d,
+        turbidity: 7.5, rayleigh: 0.85, mie: 0.012,
+        ground: [0.46, 0.21, 0.13],
+        fogColor: [0.76, 0.44, 0.31], fogDensity: 0.0044,
+        tintHi: [0.024, 0.004, -0.014], tintLo: [0.014, -0.004, -0.006],
+      },
+    },
   ];
   const MAP_BY_ID = Object.fromEntries(MAPS.map((m) => [m.id, m]));
 
@@ -150,6 +176,9 @@ const MapGen = (() => {
     M.snow = std(T.snow);
     M.ice = std(T.ice, { metalness: 0.12 });
     M.asphalt = std(T.asphalt);
+    M.mars_sand = std(T.mars_sand);
+    M.mars_rock = std(T.mars_rock);
+    M.mars_panel = std(T.mars_panel, { metalness: 0.34 });
     M.sandstone = std(T.sandstone);
     M.plaster = std(T.plaster);
     M.concrete = std(T.concrete);
@@ -163,6 +192,7 @@ const MapGen = (() => {
 
     const tone = {
       sand: 0.68, snow: 0.88, ice: 0.82, asphalt: 0.72,
+      mars_sand: 0.82, mars_rock: 0.84, mars_panel: 0.88,
       plaster: 0.74, sandstone: 0.84, tile: 0.6, concrete: 0.82, trim: 0.84, crate: 0.9, sack: 0.85,
     };
     for (const k in tone) M[k].color.setScalar(tone[k]);
@@ -174,7 +204,7 @@ const MapGen = (() => {
     M.cloth = plain({ color: 0xffffff, roughness: 0.95, side: THREE.DoubleSide });
     M.lamp = plain({
       color: 0x111111,
-      emissive: mapId === 'frost' ? 0x9edbff : mapId === 'harbor' ? 0xff9b48 : 0xffd49a,
+      emissive: mapId === 'mars' ? 0x8ce8ff : mapId === 'frost' ? 0x9edbff : mapId === 'harbor' ? 0xff9b48 : 0xffd49a,
       emissiveIntensity: 5,
     });
 
@@ -290,7 +320,171 @@ const MapGen = (() => {
     let rangeAnchor = { pos: [0, 0, 24], yaw: 0 };
     let rangeSpots = [[2.5, 0, 4], [-2.5, 0, -4], [1.5, 0, -12], [-1.5, 0, -17], [3, 0, -28], [-3.2, 0, 9.5]];
 
-    if (mapId === 'frost') {
+    if (mapId === 'mars') {
+      // ================================================================
+      //  赤岩前哨（ARES OUTPOST · MARS）
+      // ================================================================
+      STYLES = MARS_STYLES;
+      borderStyle = { mat: 'mars_rock', tint: [0.94, 0.84, 0.76] };
+      borderH = 12;
+      windowStyle = 'mars';
+
+      carve(17, 2, 30, 7);    // CT 北轨道通讯站
+      carve(20, 8, 27, 12);   // CT 中路气闸入口
+      carve(19, 13, 28, 34);  // 中路气闸大道
+      carve(19, 35, 28, 39);  // T 中路峡口
+      carve(15, 40, 32, 45);  // T 南陨坑着陆场
+      // 东侧 A 区：加压科研穹顶
+      carve(32, 3, 44, 16);
+      carve(30, 4, 32, 8);    // CT → A 通讯通道
+      carve(33, 35, 44, 42);  // T → A 陨坑边缘
+      carve(39, 17, 44, 34);  // A 东岩峡道
+      carve(29, 17, 38, 21);  // 中路 → A 空中连廊
+      // 西侧 B 区：峡谷反应堆与太阳能阵列坑
+      carve(3, 3, 15, 16);
+      carve(15, 4, 17, 7);    // CT → B 气闸门
+      carve(16, 11, 20, 13);  // CT → B 观察窗
+      carve(4, 36, 14, 42);   // T → B 西峡口
+      carve(4, 17, 9, 35);    // B 西压隧道
+      carve(10, 23, 18, 26);  // 中路 → B 侧翼连道
+
+      floorMat = (c, r) => {
+        if (c >= 32 && c <= 44 && r >= 3 && r <= 16) return 'mars_panel';
+        if (c >= 5 && c <= 13 && r >= 5 && r <= 14) return 'concrete';
+        if (c >= 17 && c <= 30 && r >= 2 && r <= 7) return 'mars_panel';
+        if (c >= 18 && c <= 29 && r >= 40 && r <= 44) return 'concrete';
+        if (c >= 20 && c <= 27 && r >= 17 && r <= 27) return 'mars_panel';
+        if (c >= 29 && c <= 38 && r >= 17 && r <= 21) return 'mars_panel';
+        if (c >= 4 && c <= 9 && r >= 20 && r <= 32) return 'mars_panel';
+        return 'mars_sand';
+      };
+
+      // A 加压科研穹顶
+      solid(26, 0, -39, 39, 1.0, -25, 'mars_panel', { top: 'mars_panel', tint: [0.94, 0.96, 1.0] });
+      ramp(32, -25, 39, -20, 0, 1.0, 'z', -1, 'mars_panel');
+      stairs(22, -35, 26, -30, 0, 1.0, 'x', 1, 5, 'mars_panel');
+      // 穹顶加压弧梁与天窗格栅
+      for (const z of [-38, -32, -26, -20]) {
+        decor(17, 5.4, z, 41, 6.0, z + 0.65, 'mars_panel', { tint: [0.9, 0.92, 0.96], ao: false });
+      }
+      decor(22, 5.9, -38.5, 23.2, 6.25, -19.5, 'darkmetal', { tint: [0.75, 0.78, 0.84], ao: false });
+      decor(35, 5.9, -38.5, 36.2, 6.25, -19.5, 'darkmetal', { tint: [0.75, 0.78, 0.84], ao: false });
+      lamp(29, 5.05, -37.67); lamp(35.6, 5.05, -31.67); lamp(22.6, 5.05, -25.67);
+      // 科研舱与掩体
+      container(29, -37.5, 33.5, -34.5, 2.3, [0.88, 0.44, 0.16], 1.0);
+      crate(36.2, -30.5, 1.5, 1.0, [0.9, 0.92, 0.96]);
+      crate(22.5, -21, 1.6, 0, [0.9, 0.92, 0.96]);
+      solid(19.5, 0, -34, 20.5, 1.1, -30, 'mars_panel', { tint: [0.96, 0.56, 0.24] });
+      barrel(39.8, -22, 0, [0.88, 0.42, 0.12]); barrel(39.8, -21.1, 0, [0.22, 0.66, 0.82]);
+      props.signs.push({ tex: SP.siteA, x: 32, y: 2.9, z: -41.96, ry: 0, s: 2.2 });
+      props.signs.push({ tex: SP.siteA, x: 33, y: 2.3, z: -14.04, ry: Math.PI, s: 1.5 });
+
+      // A 东岩峡道 + 空中连廊天桥
+      solid(16, 0, -13.5, 27, 1.2, -9.5, 'mars_panel', { top: 'mars_panel', tint: [0.9, 0.92, 0.96] });
+      ramp(11.5, -13.5, 16, -9.5, 0, 1.2, 'x', 1, 'mars_panel');
+      ramp(27, -13.5, 31.5, -9.5, 0, 1.2, 'x', -1, 'mars_panel');
+      container(31.2, 2, 34.0, 8.5, 2.3, [0.84, 0.86, 0.90]);
+      crate(39.2, -4, 1.6, 0, [0.9, 0.9, 0.92]);
+      crate(38.5, 15, 1.6, 0, [0.9, 0.9, 0.92]);
+      barrel(40.8, 8, 0, [0.88, 0.42, 0.12]); barrel(40.8, 8.9, 0, [0.22, 0.66, 0.82]);
+
+      // B 峡谷反应堆与太阳能阵列
+      solid(-37, 0, -36, -25, 0.95, -24, 'mars_panel', { top: 'concrete', tint: [0.88, 0.88, 0.92] });
+      ramp(-35, -24, -29, -19.5, 0, 0.95, 'z', -1, 'mars_panel');
+      ramp(-25, -35, -21, -29, 0, 0.95, 'x', -1, 'mars_panel');
+      // 反应堆核心塔
+      solid(-32.5, 0.95, -31.5, -29.5, 3.6, -28.5, 'mars_panel', { tint: [0.84, 0.88, 0.94] });
+      decor(-32.6, 1.8, -31.6, -29.4, 2.2, -28.4, 'lamp', { tint: [1, 1, 1], ao: false });
+      decor(-33.1, 3.5, -32.1, -28.9, 3.85, -27.9, 'darkmetal', { tint: [0.7, 0.72, 0.76] });
+      // 西崖太阳能阵列
+      solid(-41.2, 0, -39, -39.2, 1.8, -33, 'darkmetal', { tint: [0.6, 0.64, 0.7] });
+      decor(-41.3, 1.8, -39.2, -38.8, 2.05, -32.8, 'glass', { tint: [0.25, 0.45, 0.75] });
+      solid(-41.2, 0, -27, -39.2, 1.8, -21, 'darkmetal', { tint: [0.6, 0.64, 0.7] });
+      decor(-41.3, 1.8, -27.2, -38.8, 2.05, -20.8, 'glass', { tint: [0.25, 0.45, 0.75] });
+      crate(-22.5, -22, 1.6, 0, [0.9, 0.88, 0.84]); crate(-22.5, -22, 1.15, 1.6, [0.9, 0.88, 0.84]);
+      barrel(-38.5, -28, 0, [0.88, 0.42, 0.12]); barrel(-20, -37.5, 0, [0.22, 0.66, 0.82]);
+      solid(-15.6, 0, -25.6, -14.6, 1.0, -23.4, 'mars_panel', { tint: [0.94, 0.54, 0.22] });
+      // 反应堆横跨检修桁架与吊灯（两端锚入西岩壁与东墙柱）
+      decor(-42, 4.9, -30.4, -16, 5.45, -29.6, 'mars_panel', { tint: [0.88, 0.90, 0.94], ao: false });
+      lamp(-35.5, 4.55, -30); lamp(-25.5, 4.55, -30);
+      props.signs.push({ tex: SP.siteB, x: -41.96, y: 2.9, z: -30, ry: Math.PI / 2, s: 2.2 });
+
+      // B 西压隧道与侧翼连道
+      solid(-40, 4.2, -8, -28, 4.7, 18, 'mars_panel', { tint: [0.84, 0.86, 0.90] });
+      for (let z = -5; z <= 15; z += 6) lamp(-34, 3.85, z);
+      crate(-31.2, 5.5, 1.5, 0, [0.9, 0.9, 0.92]);
+      crate(-37.5, -5.5, 1.5, 0, [0.9, 0.9, 0.92]);
+      barrel(-38.8, 16, 0, [0.88, 0.42, 0.12]);
+      solid(-26, 3.9, -2, -12, 4.4, 6, 'mars_panel', { tint: [0.86, 0.88, 0.92] });
+      lamp(-19, 3.55, 2);
+
+      // 中路气闸大道（中轴 x ∈ [-5.4, 5.4] 保持通透，兼作靶场 2.0 射击长廊）
+      solid(-10, 4.8, -6, 10, 5.4, -2, 'mars_panel', { tint: [0.92, 0.94, 0.98] });
+      lamp(-4, 4.5, -4); lamp(4, 4.5, -4);
+      solid(-10, 4.8, 10, 10, 5.4, 13, 'mars_panel', { tint: [0.92, 0.94, 0.98] });
+      lamp(0, 4.5, 11.5);
+      container(-9.4, -13, -6.8, -7, 2.2, [0.86, 0.42, 0.18]);
+      crate(7.6, 2.5, 1.5, 0, [0.92, 0.92, 0.94]);
+      crate(7.6, -15, 1.5, 0, [0.92, 0.92, 0.94]);
+      crate(-7.6, 7.5, 1.5, 0, [0.92, 0.92, 0.94]);
+      barrel(-6.8, 15.5, 0, [0.88, 0.42, 0.12]);
+      solid(-7.8, 0, -26.5, -4.6, 1.0, -25.6, 'mars_panel', { tint: [0.94, 0.54, 0.22] });
+      solid(4.6, 0, 26.5, 7.8, 1.0, 27.4, 'mars_panel', { tint: [0.94, 0.54, 0.22] });
+
+      // CT 轨道通讯站 & T 陨坑着陆场（火星探测车 + 通讯天线 + 着陆信标）
+      car(-8.5, -39.5, true, [0.92, 0.93, 0.96]);
+      container(5.5, -42, 11.5, -38.8, 2.4, [0.22, 0.56, 0.78]);
+      decor(8.2, 2.4, -40.7, 8.8, 6.2, -40.1, 'darkmetal', { tint: [0.8, 0.84, 0.9] });
+      decor(7.6, 5.6, -41.2, 9.4, 5.9, -39.6, 'mars_panel', { tint: [0.96, 0.96, 0.98] });
+
+      car(10.5, 37.5, true, [0.88, 0.46, 0.18]);
+      container(-14, 34.5, -8.5, 37.5, 2.4, [0.88, 0.88, 0.92]);
+      for (const [bx, bz] of [[-6, 33.5], [6, 33.5], [-6, 42.5], [6, 42.5]]) {
+        decor(bx - 0.25, 0.01, bz - 0.25, bx + 0.25, 0.12, bz + 0.25, 'lamp', { tint: [1, 1, 1], ao: false });
+      }
+      wire(V(-10, 6.2, -16), V(10, 6.0, -16), 0.9);
+      wire(V(-10, 6.0, 16), V(10, 6.2, 16), 0.9);
+      wire(V(30, 6.4, 4), V(42, 6.2, 4), 1.0);
+
+      for (let x = -11; x <= 11; x += 2.6) for (let z = -42.5; z <= -33.5; z += 2.6) spawns.CT.push(V(x, 0, z));
+      for (let x = -14; x <= 13; x += 3) for (let z = 33.5; z <= 42.5; z += 2.8) spawns.T.push(V(x, 0, z));
+
+      points = {
+        t_spawn: V(0, 0, 38), ct_spawn: V(0, 0, -37),
+        top_mid: V(0, 0, 22), mid: V(0, 0, 0), xbox: V(-4.5, 0, 5), mid_doors: V(0, 0, -22), ct_mid: V(0, 0, -29),
+        outside_long: V(28, 0, 32), long_doors: V(36, 0, 18), long: V(36, 0, 0), long_corner: V(36, 0, -13),
+        a_ramp: V(35, 0.5, -22.5), a_site: V(32, 1.0, -31), a_short: V(21, 1.2, -11.5), short: V(13.5, 0.5, -11.5), ct_to_a: V(15, 0, -36),
+        upper_tunnel: V(-34, 0, 32), b_tunnel: V(-34, 0, 0), lower_tunnel: V(-18, 0, 2), b_exit: V(-34, 0, -14),
+        b_site: V(-28, 0.95, -27), b_plat: V(-35.5, 0.95, -34), b_doors: V(-15, 0, -36), b_window: V(-14, 0, -22),
+      };
+      sites = {
+        A: { min: [21, -40], max: [41, -18], center: V(32, 1.0, -31) },
+        B: { min: [-41, -40], max: [-19, -18], center: V(-28, 0.95, -27) },
+      };
+      buyZones = { T: { min: [-18, 30], max: [16, 44] }, CT: { min: [-14, -44], max: [14, -32] } };
+      holds = {
+        A: [hold(32, 1.0, -32, 36, 0, -14), hold(27.5, 1.0, -28, 21, 1.2, -11.5), hold(37.5, 1.0, -37, 35, 0.5, -22), hold(18.5, 0, -36, 28, 1.0, -25)],
+        B: [hold(-35.5, 0.95, -34, -34, 0, -15), hold(-27, 0.95, -33, -34, 0, -16), hold(-24, 0, -39, -16, 0, -24), hold(-19, 0, -22, -34, 0, -15)],
+        mid: [hold(0, 0, -28, 0, 0, 0), hold(-3.5, 0, -27, 0, 0, -6)],
+      };
+      routes = {
+        A: [['outside_long', 'long_doors', 'long', 'long_corner', 'a_ramp', 'a_site'], ['top_mid', 'mid', 'short', 'a_short', 'a_site']],
+        B: [['upper_tunnel', 'b_tunnel', 'b_exit', 'b_site'], ['top_mid', 'lower_tunnel', 'b_tunnel', 'b_exit', 'b_site']],
+      };
+      callouts = [
+        { name: 'CT 轨道通讯站', x0: -14, x1: 14, z0: -46, z1: -32 },
+        { name: 'T 陨坑着陆场', x0: -18, x1: 16, z0: 32, z1: 46 },
+        { name: 'A 加压科研穹顶', x0: 16, x1: 44, z0: -42, z1: -14 },
+        { name: 'B 峡谷反应堆', x0: -44, x1: -16, z0: -42, z1: -14 },
+        { name: 'A 东岩峡道', x0: 28, x1: 44, z0: -14, z1: 38 },
+        { name: 'B 西压隧道', x0: -42, x1: -28, z0: -14, z1: 38 },
+        { name: 'A 空中连廊', x0: 10, x1: 30, z0: -14, z1: -4 },
+        { name: '中路气闸大道', x0: -12, x1: 12, z0: -32, z1: 32 },
+      ];
+      rangeAnchor = { pos: [0, 0, 22], yaw: 0 };
+      rangeSpots = [[-4.2, 0, 8], [4.2, 0, 1], [-2.8, 0, -8], [3.2, 0, -15], [0, 0, -20], [4.0, 0, 13]];
+
+    } else if (mapId === 'frost') {
       // ================================================================
       //  极地科研站（ARCTIC LAB · FROST）
       // ================================================================
@@ -700,10 +894,12 @@ const MapGen = (() => {
         { f: 'nx', fixed: b.x0, along: 'z', a0: b.r0, a1: b.r1, out: (i) => [b.c0 - 1, i] },
         { f: 'px', fixed: b.x1, along: 'z', a0: b.r0, a1: b.r1, out: (i) => [b.c1 + 1, i] },
       ];
-      const trimMat = windowStyle === 'arctic' ? 'concrete' : windowStyle === 'industrial' ? 'darkmetal' : 'trim';
+      const trimMat = windowStyle === 'arctic' ? 'concrete' : (windowStyle === 'industrial' || windowStyle === 'mars') ? 'darkmetal' : 'trim';
       const trimTint = windowStyle === 'arctic'
         ? [0.56, 0.66, 0.78]
-        : [b.style.tint[0] * 0.92, b.style.tint[1] * 0.9, b.style.tint[2] * 0.88];
+        : windowStyle === 'mars'
+          ? (b.style.mat === 'mars_rock' ? [0.62, 0.36, 0.26] : [0.78, 0.80, 0.84])
+          : [b.style.tint[0] * 0.92, b.style.tint[1] * 0.9, b.style.tint[2] * 0.88];
       for (const s of sides) {
         const sign = (s.f === 'nz' || s.f === 'nx') ? -1 : 1;
         let i = s.a0;
@@ -717,9 +913,11 @@ const MapGen = (() => {
             if (s.along === 'x') decor(p0, y0, s.fixed, p1, y1, s.fixed + sign * depth, mat, { tint });
             else decor(s.fixed, y0, p0, s.fixed + sign * depth, y1, p1, mat, { tint });
           };
-          strip(0, 0.42, 0.07, trimMat, [trimTint[0] * 0.8, trimTint[1] * 0.8, trimTint[2] * 0.8]);
-          strip(b.height - 0.28, b.height, 0.16, trimMat, trimTint);
-          strip(b.height - 0.5, b.height - 0.42, 0.07, trimMat, trimTint);
+          if (!(windowStyle === 'mars' && b.style.mat === 'mars_rock')) {
+            strip(0, 0.42, 0.07, trimMat, [trimTint[0] * 0.8, trimTint[1] * 0.8, trimTint[2] * 0.8]);
+            strip(b.height - 0.28, b.height, 0.16, trimMat, trimTint);
+            strip(b.height - 0.5, b.height - 0.42, 0.07, trimMat, trimTint);
+          }
           for (let k = i; k <= j; k++) {
             const c0 = cx0(k) + 0.5, c1 = cx0(k) + 1.5;
             const rr = rng(k, s.f.charCodeAt(1) + b.c0 * 3 + b.r0, 1);
@@ -730,6 +928,7 @@ const MapGen = (() => {
             const rows = [];
             if (b.height >= 4.6) rows.push(2.7);
             if (b.height >= 7.2) rows.push(5.2);
+            if (windowStyle === 'mars' && b.style.mat === 'mars_rock') continue;
             for (const wy of rows) {
               if (rng(k, wy * 10 + b.c0, 2) < 0.42) {
                 box(c0 - 0.08, c1 + 0.08, wy - 0.1, wy + 1.42, -0.01, 0.07, trimMat, trimTint);
@@ -772,7 +971,7 @@ const MapGen = (() => {
       const w = 6 + Math.random() * 10, d = 6 + Math.random() * 10, h = 9 + Math.random() * 14;
       const st = STYLES[i % STYLES.length];
       decor(x - w / 2, 0, z - d / 2, x + w / 2, h, z + d / 2, st.mat, { tint: st.tint, ao: false, cull: false, skipTop: false });
-      decor(x - w / 2 - 0.15, h - 0.3, z - d / 2 - 0.15, x + w / 2 + 0.15, h, z + d / 2 + 0.15, mapId === 'frost' ? 'metal' : 'trim', { tint: st.tint, ao: false, cull: false });
+      decor(x - w / 2 - 0.15, h - 0.3, z - d / 2 - 0.15, x + w / 2 + 0.15, h, z + d / 2 + 0.15, mapId === 'frost' ? 'metal' : mapId === 'mars' ? 'darkmetal' : 'trim', { tint: st.tint, ao: false, cull: false });
       skyline.push({ x, z, h });
     }
 
@@ -849,9 +1048,9 @@ const MapGen = (() => {
         addFace(key, o, f, du, dv, { tint: v.tint, ao: !noAO, cull: v.cull, stepU: noAO ? 8 : 1.0, stepV: noAO ? 8 : 1.0 });
       }
     }
-    const rampSideMat = mapId === 'dust' ? 'sandstone' : 'concrete';
+    const rampSideMat = mapId === 'dust' ? 'sandstone' : mapId === 'mars' ? 'mars_panel' : 'concrete';
     for (const r of props.ramps) {
-      const tint = mapId === 'frost' ? [0.88, 0.92, 0.98] : [0.95, 0.92, 0.86];
+      const tint = mapId === 'frost' ? [0.88, 0.92, 0.98] : mapId === 'mars' ? [0.92, 0.88, 0.84] : [0.95, 0.92, 0.86];
       let o, u, vdir, du, dv;
       if (r.axis === 'z') {
         const zl = r.rising > 0 ? r.z0 : r.z1, zh = r.rising > 0 ? r.z1 : r.z0;
@@ -922,7 +1121,7 @@ const MapGen = (() => {
       g.setIndex(B.n > 65535 ? new THREE.Uint32BufferAttribute(B.idx, 1) : new THREE.Uint16BufferAttribute(B.idx, 1));
       g.computeBoundingSphere();
       const mesh = new THREE.Mesh(g, M[k] || M.plaster);
-      mesh.castShadow = k !== 'sand' && k !== 'snow' && k !== 'asphalt' && k !== 'glass' && k !== 'lamp';
+      mesh.castShadow = k !== 'sand' && k !== 'snow' && k !== 'mars_sand' && k !== 'asphalt' && k !== 'glass' && k !== 'lamp';
       mesh.receiveShadow = true;
       mesh.name = 'batch_' + k;
       group.add(mesh);
@@ -932,6 +1131,7 @@ const MapGen = (() => {
     progress && progress(0.7, '布置道具');
 
     // ---------------- 独立道具网格 ----------------
+    const rockTex = mapId === 'mars' ? T.mars_rock : mapId === 'frost' ? T.snow : T.rock;
     const P = {
       barrel: trackMat(new THREE.MeshStandardMaterial({ map: T.metal.map, normalMap: T.metal.normalMap, roughnessMap: T.metal.roughnessMap, metalness: 0.45, roughness: 1, envMapIntensity: 0.8 })),
       rubber: trackMat(new THREE.MeshStandardMaterial({ color: 0x141414, roughness: 0.92 })),
@@ -939,12 +1139,12 @@ const MapGen = (() => {
       bark: trackMat(new THREE.MeshStandardMaterial({ map: T.beam.map, normalMap: T.beam.normalMap, color: 0xd2b896, roughness: 0.95 })),
       leaf: trackMat(new THREE.MeshStandardMaterial({ map: SP.leaf, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.75, color: 0xd8e0b0 })),
       wire: trackMat(new THREE.MeshStandardMaterial({ color: 0x0e0e0e, roughness: 0.6 })),
-      glow: trackMat(new THREE.MeshBasicMaterial({ color: mapId === 'frost' ? new THREE.Color(2.6, 4.2, 5.2) : mapId === 'harbor' ? new THREE.Color(5, 3.2, 1.8) : new THREE.Color(5, 3.9, 2.4) })),
+      glow: trackMat(new THREE.MeshBasicMaterial({ color: mapId === 'mars' ? new THREE.Color(2.2, 4.6, 5.4) : mapId === 'frost' ? new THREE.Color(2.6, 4.2, 5.2) : mapId === 'harbor' ? new THREE.Color(5, 3.2, 1.8) : new THREE.Color(5, 3.9, 2.4) })),
       rock: trackMat(new THREE.MeshStandardMaterial({
-        map: (mapId === 'frost' ? T.snow : T.rock).map,
-        normalMap: (mapId === 'frost' ? T.snow : T.rock).normalMap,
+        map: rockTex.map,
+        normalMap: rockTex.normalMap,
         roughness: 1,
-        color: mapId === 'frost' ? 0xc0d4e8 : mapId === 'harbor' ? 0x9c8e82 : 0xd9c2a0,
+        color: mapId === 'mars' ? 0xdc8c64 : mapId === 'frost' ? 0xc0d4e8 : mapId === 'harbor' ? 0x9c8e82 : 0xd9c2a0,
       })),
     };
 
@@ -1025,6 +1225,8 @@ const MapGen = (() => {
     const addMerged = (list, mat, shadow) => { if (!list.length) return; const m = new THREE.Mesh(Models.mergeGeos(list), mat); m.castShadow = !!shadow; m.receiveShadow = true; group.add(m); };
     addMerged(bark, P.bark, true); addMerged(leaves, P.leaf, true); addMerged(wires, P.wire, true);
     addMerged(bulbs, P.glow, false); addMerged(shades, P.rim, false); addMerged(cords, P.wire, false);
+    for (const list of [bark, leaves, wires]) for (const it of list) if (it.geo && it.geo.dispose) it.geo.dispose();
+    bulbG.dispose(); shadeG.dispose(); cordG.dispose();
 
     for (const s of props.signs) {
       const sm = trackMat(new THREE.MeshStandardMaterial({ map: s.tex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, roughness: 0.9 }));
@@ -1055,13 +1257,13 @@ const MapGen = (() => {
       const gg = new THREE.RingGeometry(48, 900, 64, 1); gg.rotateX(-Math.PI / 2);
       const guv = gg.attributes.uv, gp = gg.attributes.position;
       for (let i = 0; i < guv.count; i++) guv.setXY(i, gp.getX(i) / 4, gp.getZ(i) / 4);
-      const outerTex = mapId === 'frost' ? T.snow : mapId === 'harbor' ? T.ice : T.sand;
+      const outerTex = mapId === 'mars' ? T.mars_sand : mapId === 'frost' ? T.snow : mapId === 'harbor' ? T.ice : T.sand;
       const outerMat = trackMat(new THREE.MeshStandardMaterial({
         map: outerTex.map,
         normalMap: outerTex.normalMap,
         roughness: mapId === 'harbor' ? 0.22 : 1,
         metalness: mapId === 'harbor' ? 0.35 : 0,
-        color: mapId === 'frost' ? 0xdce8f4 : mapId === 'harbor' ? 0x2c4256 : 0xe8dcc8,
+        color: mapId === 'mars' ? 0xd47e58 : mapId === 'frost' ? 0xdce8f4 : mapId === 'harbor' ? 0x2c4256 : 0xe8dcc8,
       }));
       const ground = new THREE.Mesh(gg, outerMat);
       ground.position.y = -0.02; ground.receiveShadow = true; group.add(ground);
@@ -1071,23 +1273,26 @@ const MapGen = (() => {
     const RS = 4, RC = document.createElement('canvas'); RC.width = RC.height = 96 * RS;
     {
       const g = RC.getContext('2d');
-      g.fillStyle = mapId === 'frost' ? '#141e28' : mapId === 'harbor' ? '#16191e' : '#1b1a18';
+      g.fillStyle = mapId === 'mars' ? '#1e1310' : mapId === 'frost' ? '#141e28' : mapId === 'harbor' ? '#16191e' : '#1b1a18';
       g.fillRect(0, 0, RC.width, RC.height);
       const sorted = world.boxes.slice().sort((a, b2) => a.maxY - b2.maxY);
       for (const b of sorted) {
         if (b.minY > 2.5) continue;
         let col;
-        if (b.ramp) col = mapId === 'frost' ? '#8ea6bc' : '#9a8c74';
+        if (b.ramp) col = mapId === 'mars' ? '#c87d56' : mapId === 'frost' ? '#8ea6bc' : '#9a8c74';
         else if (b.maxY <= 0.01) {
           col = b.mat === 'snow' ? '#9eb2c4'
             : b.mat === 'ice' ? '#7b99b4'
               : b.mat === 'asphalt' ? '#58606a'
-                : b.mat === 'tile' ? '#8f8270'
-                  : b.mat === 'concrete' ? '#7e7a72' : '#8a7a62';
+                : b.mat === 'mars_sand' ? '#9e5336'
+                  : b.mat === 'mars_panel' ? '#a6aeb8'
+                    : b.mat === 'mars_rock' ? '#6e3220'
+                      : b.mat === 'tile' ? '#8f8270'
+                        : b.mat === 'concrete' ? '#7e7a72' : '#8a7a62';
         }
-        else if (b.maxY <= 1.3 && (b.maxX - b.minX) * (b.maxZ - b.minZ) > 20) col = mapId === 'frost' ? '#aec2d6' : '#a39478';
-        else if (b.maxY <= 3.5) col = mapId === 'frost' ? '#3f5060' : '#4e4840';
-        else col = mapId === 'frost' ? '#1e2c3a' : '#262420';
+        else if (b.maxY <= 1.3 && (b.maxX - b.minX) * (b.maxZ - b.minZ) > 20) col = mapId === 'mars' ? '#b8c0ca' : mapId === 'frost' ? '#aec2d6' : '#a39478';
+        else if (b.maxY <= 3.5) col = mapId === 'mars' ? '#5e3426' : mapId === 'frost' ? '#3f5060' : '#4e4840';
+        else col = mapId === 'mars' ? '#2e1812' : mapId === 'frost' ? '#1e2c3a' : '#262420';
         g.fillStyle = col;
         g.fillRect((b.minX - O) * RS, (b.minZ - O) * RS, (b.maxX - b.minX) * RS, (b.maxZ - b.minZ) * RS);
       }
@@ -1111,6 +1316,7 @@ const MapGen = (() => {
       group,
       materials: M,
       _mats: ownedMats,
+      _textures: [],
       radar: RC,
       radarScale: RS,
       origin: O,
@@ -1143,15 +1349,31 @@ const MapGen = (() => {
   function dispose(map, scene) {
     if (!map) return;
     if (map.group && scene) scene.remove(map.group);
+    const seenGeo = new Set();
     if (map.group) {
       map.group.traverse((o) => {
-        if (o.geometry && o.geometry.dispose) o.geometry.dispose();
+        if (o.geometry && o.geometry.dispose && !seenGeo.has(o.geometry)) {
+          seenGeo.add(o.geometry);
+          o.geometry.dispose();
+        }
       });
     }
     if (Array.isArray(map._mats)) {
       for (const m of map._mats) {
         if (m && m.dispose) m.dispose();
       }
+      map._mats.length = 0;
+    }
+    if (Array.isArray(map._textures)) {
+      for (const t of map._textures) {
+        if (t && t.dispose) t.dispose();
+      }
+      map._textures.length = 0;
+    }
+    if (map.radar) {
+      map.radar.width = 0;
+      map.radar.height = 0;
+      map.radar = null;
     }
   }
 

@@ -295,6 +295,90 @@ const Tex = (() => {
         o.ro = 0.8 + 0.14 * agg;
       }
     }],
+    // 火星赤铁矿风蚀沙地 (世界 4m)
+    mars_sand: [2.5, (u, v, x, y, o) => {
+      const big = fbm(u, v, 4, 5, 2111), mid = fbm(u, v, 16, 3, 2121), fine = vnoise(u * 256, v * 256, 256, 2131);
+      const warp = (fbm(u, v, 4, 3, 2101) - 0.5) * 0.45;
+      const rip = 0.5 + 0.5 * Math.sin((u * 10 + v * 4 + warp) * Math.PI * 2);
+      const gr = vnoise(u * 128, v * 128, 128, 2141);
+      const grit = gr > 0.80 ? (gr - 0.80) * 5.0 : 0;
+      const k = 0.82 + 0.20 * big + 0.14 * rip + 0.06 * fine;
+      o.r = (0.58 + 0.08 * mid) * k;
+      o.g = (0.24 + 0.05 * mid) * k;
+      o.b = (0.12 + 0.03 * mid) * k;
+      if (grit > 0) {
+        const gmix = clamp(grit * 0.75, 0, 0.82);
+        const gc = 0.12 + 0.08 * hash2(Math.floor(u * 128), Math.floor(v * 128), 2147);
+        o.r = lerp(o.r, gc * 1.15, gmix);
+        o.g = lerp(o.g, gc * 0.92, gmix);
+        o.b = lerp(o.b, gc * 0.85, gmix);
+      }
+      o.h = clamp(0.32 * big + 0.36 * rip + 0.14 * mid + 0.08 * fine + grit * 0.32, 0, 1);
+      o.ro = clamp(0.95 - grit * 0.24 - rip * 0.04, 0.58, 0.98);
+    }],
+    // 火星赤岩峡谷沉积岩层 (世界 4m)
+    mars_rock: [3.4, (u, v, x, y, o) => {
+      const warp = (fbm(u, v, 4, 4, 2201) - 0.5) * 0.16;
+      const sv = ((v + warp) % 1 + 1) % 1;
+      const b1 = Math.sin(sv * Math.PI * 2 * 6), b2 = Math.sin(sv * Math.PI * 2 * 14 + 1.1);
+      const strata = 0.5 + 0.32 * b1 + 0.18 * b2;
+      worley(u, v, 6, 2217, W);
+      const edge = W[1] - W[0];
+      const crev = 1 - smoothstep(0.018, 0.105, edge);
+      const hseam = 1 - smoothstep(0.0, 0.11, Math.abs(b1));
+      const surf = fbm(u, v, 12, 4, 2241), fine = vnoise(u * 220, v * 220, 220, 2251);
+      const dusty = smoothstep(0.66, 0.94, strata) * 0.22;
+      const k = (0.76 + 0.34 * strata) * (0.86 + 0.22 * surf) * (0.94 + 0.10 * fine);
+      o.r = lerp(0.50 * k, 0.68, dusty);
+      o.g = lerp(0.21 * k, 0.32, dusty);
+      o.b = lerp(0.12 * k, 0.18, dusty);
+      const crAmt = clamp(crev * 0.85 + hseam * 0.35, 0, 1);
+      o.r = lerp(o.r, 0.24, crAmt * 0.72);
+      o.g = lerp(o.g, 0.10, crAmt * 0.72);
+      o.b = lerp(o.b, 0.07, crAmt * 0.72);
+      o.h = clamp(0.46 + 0.24 * strata + 0.18 * surf + 0.06 * fine - 0.36 * crev - 0.12 * hseam, 0.02, 1);
+      o.ro = clamp(0.86 + 0.08 * fine + 0.06 * crAmt, 0.74, 0.98);
+    }],
+    // 航天白钛前哨加强壁板 (世界 4m)
+    mars_panel: [2.8, (u, v, x, y, o) => {
+      const pu = (u * 2) % 1, pv = (v * 4) % 1;
+      const px = Math.floor(u * 2), py = Math.floor(v * 4);
+      const d = Math.min(pu, 1 - pu, pv, 1 - pv);
+      const seam = d < 0.024;
+      const fine = vnoise(u * 220, v * 220, 220, 2305), grime = fbm(u, v, 6, 4, 2341);
+      const inRib = pu > 0.09 && pu < 0.91 && pv > 0.22 && pv < 0.78;
+      const rib = inRib ? (0.5 + 0.5 * Math.sin((pv - 0.22) / 0.56 * Math.PI * 2 * 5)) : 0.5;
+      const panelVar = 0.94 + 0.09 * hash2(px, py, 2311);
+      // 铆钉
+      let rivet = false;
+      for (const rx of [0.06, 0.94]) for (const ry of [0.13, 0.87]) {
+        if (Math.hypot((pu - rx) * 2, pv - ry) < 0.028) { rivet = true; break; }
+      }
+      // 底部微弱警示条纹
+      const hazard = v > 0.90 && v < 0.965 && !seam;
+      const dust = clamp((grime - 0.44) * (0.28 + 0.32 * smoothstep(0.55, 1.0, v)), 0, 0.34);
+      if (seam) {
+        o.r = 0.20; o.g = 0.19; o.b = 0.20; o.h = 0.12; o.ro = 0.88;
+      } else if (rivet) {
+        o.r = 0.48; o.g = 0.50; o.b = 0.53; o.h = 0.88; o.ro = 0.32;
+      } else if (hazard) {
+        const stripe = (((u * 10 + v * 10) % 1) < 0.5);
+        if (stripe) { o.r = 0.80; o.g = 0.40; o.b = 0.09; }
+        else { o.r = 0.13; o.g = 0.13; o.b = 0.15; }
+        o.h = 0.58 + 0.04 * fine; o.ro = 0.54;
+      } else {
+        const k = panelVar * (0.94 + 0.08 * fine) * (0.94 + 0.08 * rib);
+        o.r = 0.75 * k; o.g = 0.76 * k; o.b = 0.79 * k;
+        o.h = 0.52 + (inRib ? 0.22 * rib : 0.12) + 0.04 * fine;
+        o.ro = clamp(0.44 + 0.12 * grime + (inRib ? 0.04 : 0), 0.36, 0.78);
+      }
+      if (dust > 0) {
+        o.r = lerp(o.r, 0.56, dust);
+        o.g = lerp(o.g, 0.26, dust);
+        o.b = lerp(o.b, 0.15, dust);
+        o.ro = lerp(o.ro, 0.92, dust);
+      }
+    }],
   };
 
   // 枪械：磨损金属 / 聚合物（小尺寸，乘以材质颜色）

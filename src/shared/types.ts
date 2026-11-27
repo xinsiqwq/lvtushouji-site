@@ -396,8 +396,9 @@ export type ArcadeAdminScoresResponse = {
   counts: Record<ArcadeGameId, number>;
 };
 
-// Mars 3D Tactical Shooter · SANDSTORM (Phase 4)
-export type ArenaGameMode = 'elimination' | 'deathmatch';
+// Mars 3D Tactical Shooter · SANDSTORM (Phase 4 & v3.0)
+export type ArenaMapId = 'dust' | 'frost' | 'harbor' | 'mars';
+export type ArenaGameMode = 'elimination' | 'deathmatch' | 'armsrace' | 'retake';
 export type ArenaBotDifficulty = 'rookie' | 'veteran' | 'commander';
 export type ArenaTeam = 'red' | 'blue';
 export type ArenaWeaponId = 'rifle' | 'sniper' | 'pistol' | 'knife';
@@ -409,6 +410,7 @@ export type ArenaLobbySummary = {
   name: string;
   hostName: string;
   mode: ArenaGameMode;
+  mapId: ArenaMapId;
   isPublic: boolean;
   phase: ArenaPhase;
   humanCount: number;
@@ -427,6 +429,7 @@ export type ArenaCreateRoomRequest = {
   name?: string;
   hostName?: string;
   mode?: ArenaGameMode;
+  mapId?: ArenaMapId;
   isPublic?: boolean;
   maxHumans?: number;
   botCount?: number;
@@ -464,6 +467,7 @@ export type ArenaMatchRecord = {
   roomCode: string;
   source: 'online' | 'solo';
   mode: ArenaGameMode;
+  mapId: ArenaMapId;
   winnerTeam: ArenaTeam | 'draw';
   scoreRed: number;
   scoreBlue: number;
@@ -484,6 +488,7 @@ export type ArenaSubmitMatchRequest = {
   source?: 'online' | 'solo';
   archiveToken?: string;
   mode: ArenaGameMode;
+  mapId?: ArenaMapId;
   winnerTeam: ArenaTeam | 'draw';
   scoreRed: number;
   scoreBlue: number;

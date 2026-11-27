@@ -140,11 +140,14 @@ const Effects = (() => {
   let weatherKind = 'dust';
   const tracers = [], shells = [], flashes = [], lights = [];
   let shellMesh = null; const SHELL_MAX = 96;
-  const smokes = [];
+  let fireLight = null;
+  let impactMesh = null, impactIdx = 0, impactCount = 0; const IMPACT_MAX = 80;
+  const smokes = [], fires = [];
   const tmpHit = {};
   const DUST = {
     stone: [0.62, 0.55, 0.46],
     sand: [0.6, 0.5, 0.36],
+    mars: [0.74, 0.34, 0.20],
     snow: [0.88, 0.94, 1.0],
     ice: [0.72, 0.88, 1.0],
     wood: [0.42, 0.32, 0.22],
@@ -153,6 +156,7 @@ const Effects = (() => {
   const HOLE_TINT = {
     stone: [1, 1, 1],
     sand: [0.9, 0.85, 0.8],
+    mars: [0.86, 0.56, 0.44],
     snow: [0.82, 0.9, 1.0],
     ice: [0.72, 0.88, 1.0],
     wood: [0.8, 0.65, 0.5],
@@ -161,6 +165,7 @@ const Effects = (() => {
 
   const api = {
     smokes,
+    fires,
     init(sc, w) {
       scene = sc; curWorld = w;
       const S = Tex.sprites;
@@ -170,7 +175,7 @@ const Effects = (() => {
       smokeSys.mesh.renderOrder = 12;
       holes = new DecalSet(scene, S.hole, 320);
       blood = new DecalSet(scene, S.blood, 80, { roughness: 0.35 });
-      scorch = new DecalSet(scene, S.scorch, 16);
+      scorch = new DecalSet(scene, S.scorch, 24);
       // 曳光
       for (let i = 0; i < 40; i++) {
         const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: S.tracer, color: new THREE.Color(7, 5, 2.6), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
@@ -193,6 +198,16 @@ const Effects = (() => {
         const l = new THREE.PointLight(0xffb45a, 0, 9, 2); l.position.set(0, -100, 0);
         scene.add(l); lights.push({ l, t: 0, dur: 0.05, peak: 0 });
       }
+      // 燃烧弹常驻火光
+      fireLight = new THREE.PointLight(0xff6b1c, 0, 14, 2);
+      fireLight.position.set(0, -100, 0);
+      scene.add(fireLight);
+      // 靶场 2.0 3D 弹着标记池
+      const imat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.82, depthWrite: false });
+      impactMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.085, 0.085, 0.085), imat, IMPACT_MAX);
+      impactMesh.count = 0; impactMesh.frustumCulled = false; impactMesh.renderOrder = 9;
+      impactMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(IMPACT_MAX * 3).fill(1), 3);
+      scene.add(impactMesh);
     },
 
     setWorld(w) { curWorld = w; },
@@ -210,8 +225,9 @@ const Effects = (() => {
       const nx = normal.x, ny = normal.y, nz = normal.z;
       const dust = DUST[fx] || DUST.stone;
       const amb = 1.0;
+      const isDusty = fx === 'sand' || fx === 'mars';
       // 碎屑
-      const nChips = fx === 'metal' ? 2 : fx === 'sand' ? 7 : 6;
+      const nChips = fx === 'metal' ? 2 : isDusty ? 7 : 6;
       for (let i = 0; i < nChips; i++) {
         const s = 2 + Math.random() * 4;
         P.spawn(point.x + nx * 0.02, point.y + ny * 0.02, point.z + nz * 0.02,
@@ -219,11 +235,11 @@ const Effects = (() => {
           { life: rand(0.4, 0.8), s0: rand(0.012, 0.03), atlas: 3, c: [dust[0] * 0.8, dust[1] * 0.8, dust[2] * 0.8], grav: 9.8, drag: 0.5, rv: rand(-12, 12) });
       }
       // 尘雾
-      const puffs = fx === 'metal' ? 1 : fx === 'sand' ? 4 : 3;
+      const puffs = fx === 'metal' ? 1 : isDusty ? 4 : 3;
       for (let i = 0; i < puffs; i++) {
         const s = rand(0.4, 1.3);
         P.spawn(point.x + nx * 0.05, point.y + ny * 0.05, point.z + nz * 0.05, nx * s + rand(-0.2, 0.2), ny * s + rand(0, 0.4), nz * s + rand(-0.2, 0.2),
-          { life: rand(0.7, 1.4), s0: 0.08, s1: rand(0.45, 0.8), atlas: 1, a: fx === 'sand' ? 0.55 : 0.42, c: [dust[0] * amb, dust[1] * amb, dust[2] * amb], drag: 2.2, grav: -0.15, rv: rand(-0.6, 0.6) });
+          { life: rand(0.7, 1.4), s0: 0.08, s1: rand(0.45, 0.8), atlas: 1, a: isDusty ? 0.55 : 0.42, c: [dust[0] * amb, dust[1] * amb, dust[2] * amb], drag: 2.2, grav: -0.15, rv: rand(-0.6, 0.6) });
       }
       if (fx === 'metal' || (fx === 'stone' && Math.random() < 0.35)) {
         const n = fx === 'metal' ? 9 : 3;
@@ -286,14 +302,14 @@ const Effects = (() => {
     },
 
     slideDust(pos, vel) {
-      const col = weatherKind === 'snow' ? DUST.snow : DUST.sand;
+      const col = weatherKind === 'snow' ? DUST.snow : weatherKind === 'mars' ? DUST.mars : DUST.sand;
       for (let i = 0; i < 2; i++) {
         P.spawn(pos.x + rand(-0.2, 0.2), pos.y + 0.05, pos.z + rand(-0.2, 0.2), vel.x * 0.25 + rand(-0.3, 0.3), rand(0.2, 0.6), vel.z * 0.25 + rand(-0.3, 0.3),
           { life: rand(0.6, 1.1), s0: 0.15, s1: rand(0.6, 0.9), atlas: 1, a: 0.32, c: col, drag: 2.0, grav: -0.1 });
       }
     },
     landDust(pos, k) {
-      const col = weatherKind === 'snow' ? DUST.snow : DUST.sand;
+      const col = weatherKind === 'snow' ? DUST.snow : weatherKind === 'mars' ? DUST.mars : DUST.sand;
       for (let i = 0; i < 6; i++) {
         const a = i / 6 * 6.28;
         P.spawn(pos.x, pos.y + 0.05, pos.z, Math.cos(a) * 1.2 * k, 0.2, Math.sin(a) * 1.2 * k, { life: 0.7, s0: 0.12, s1: 0.5, atlas: 1, a: 0.25 * k, c: col, drag: 3 });
@@ -332,6 +348,73 @@ const Effects = (() => {
       smokes.push(s);
       return s;
     },
+    fire(pos, dur = 7.5, radius = 3.3) {
+      if (!pos) return null;
+      const f = { pos: pos.clone(), r: radius, t: 0, life: dur, active: true };
+      fires.push(f);
+      const h = curWorld ? curWorld.raycast(pos.x, pos.y + 0.4, pos.z, 0, -1, 0, 2.4, tmpHit, true) : null;
+      const gy = h ? pos.y + 0.4 - h.t : pos.y + 0.01;
+      scorch.add(_v2.set(pos.x, gy, pos.z), _v3.set(0, 1, 0), rand(radius * 0.9, radius * 1.15), [0.95, 0.85, 0.78]);
+      for (let i = 0; i < 18; i++) {
+        const a = Math.random() * 6.28, rr = Math.sqrt(Math.random()) * radius * 0.65;
+        PA.spawn(pos.x + Math.cos(a) * rr * 0.3, gy + 0.15, pos.z + Math.sin(a) * rr * 0.3,
+          Math.cos(a) * rand(1.4, 3.6), rand(1.0, 2.8), Math.sin(a) * rand(1.4, 3.6),
+          { life: rand(0.3, 0.65), s0: rand(0.35, 0.65), s1: rand(0.9, 1.6), atlas: 1, c: [8.5, 3.6, 0.7], drag: 3.2, grav: -1.6, rv: rand(-2, 2) });
+      }
+      for (let i = 0; i < 14; i++) {
+        const d = _v1.set(rand(-1, 1), rand(0.3, 1.5), rand(-1, 1)).normalize(); const s = rand(3.5, 9.5);
+        PA.spawn(pos.x, gy + 0.25, pos.z, d.x * s, d.y * s, d.z * s,
+          { life: rand(0.3, 0.75), s0: 0.035, s1: 0.008, atlas: 2, c: [10, 5.5, 1.8], grav: 9.8, drag: 1.0 });
+      }
+      for (let i = 0; i < 6; i++) {
+        const a = Math.random() * 6.28, rr = rand(0, radius * 0.45);
+        P.spawn(pos.x + Math.cos(a) * rr, gy + 0.3, pos.z + Math.sin(a) * rr,
+          Math.cos(a) * 0.8, rand(1.0, 2.2), Math.sin(a) * 0.8,
+          { life: rand(1.2, 2.0), s0: 0.55, s1: rand(1.5, 2.3), atlas: 1, a: 0.48, c: [0.15, 0.13, 0.12], drag: 1.6, grav: -0.45, rv: rand(-0.6, 0.6) });
+      }
+      api.light(_v2.set(pos.x, gy + 0.7, pos.z), 16, 0.35, 0xff6a18, 16);
+      return f;
+    },
+    extinguishFiresNear(pos, radius = 4.2) {
+      if (!pos) return 0;
+      let count = 0;
+      for (let i = fires.length - 1; i >= 0; i--) {
+        const f = fires[i];
+        if (!f.active) { fires.splice(i, 1); continue; }
+        if (f.pos.distanceTo(pos) <= radius) {
+          f.active = false;
+          fires.splice(i, 1);
+          count++;
+          for (let k = 0; k < 20; k++) {
+            const a = Math.random() * 6.28, rr = Math.sqrt(Math.random()) * f.r * 0.9;
+            P.spawn(f.pos.x + Math.cos(a) * rr, f.pos.y + 0.25, f.pos.z + Math.sin(a) * rr,
+              Math.cos(a) * rand(0.3, 1.2), rand(1.2, 2.8), Math.sin(a) * rand(0.3, 1.2),
+              { life: rand(1.2, 2.3), s0: rand(0.55, 0.9), s1: rand(1.9, 3.0), atlas: 1, a: 0.66, c: [0.92, 0.95, 0.98], drag: 1.8, grav: -0.55, fin: 0.08, rv: rand(-0.4, 0.4) });
+          }
+        }
+      }
+      if (!fires.length && fireLight) fireLight.intensity = 0;
+      return count;
+    },
+    impactMarker(pos, isHit) {
+      if (!impactMesh || !pos) return;
+      const idx = impactIdx % IMPACT_MAX;
+      impactIdx++;
+      impactCount = Math.min(IMPACT_MAX, impactCount + 1);
+      _impM4.makeTranslation(pos.x, pos.y, pos.z);
+      impactMesh.setMatrixAt(idx, _impM4);
+      if (isHit) _impCol.setRGB(0.12, 0.96, 0.74);
+      else _impCol.setRGB(0.96, 0.16, 0.14);
+      impactMesh.setColorAt(idx, _impCol);
+      impactMesh.count = impactCount;
+      impactMesh.instanceMatrix.needsUpdate = true;
+      impactMesh.instanceColor.needsUpdate = true;
+    },
+    clearImpactMarkers() {
+      impactIdx = 0;
+      impactCount = 0;
+      if (impactMesh) impactMesh.count = 0;
+    },
 
     update(dt, cam) {
       // 环境天气粒子：低画质或关闭镜头特效时停用以保帧率
@@ -350,6 +433,15 @@ const Effects = (() => {
           if (Math.random() < dt * 5) {
             PA.spawn(c.x + rand(-8, 8), c.y + rand(-0.8, 1.6), c.z + rand(-8, 8), rand(0.15, 0.6), rand(0.15, 0.5), rand(-0.2, 0.2),
               { life: rand(2.2, 4.2), s0: rand(0.012, 0.024), s1: 0.005, atlas: 2, a: 0.85, c: [4.5, 1.8, 0.4], fin: 0.15, drag: 0.2 });
+          }
+        } else if (weatherKind === 'mars') {
+          if (Math.random() < dt * 24) {
+            P.spawn(c.x + rand(-10, 10), c.y + rand(-1.0, 3.2), c.z + rand(-10, 10), rand(0.9, 2.2), rand(-0.12, 0.14), rand(-0.35, 0.35),
+              { life: rand(3.2, 5.5), s0: rand(0.012, 0.026), atlas: 0, a: 0.62, c: [1.35, 0.62, 0.36], fin: 0.2, drag: 0.14 });
+          }
+          if (Math.random() < dt * 7) {
+            P.spawn(c.x + rand(-12, 12), c.y + rand(-1.4, 0.4), c.z + rand(-12, 12), rand(2.2, 4.2), rand(-0.04, 0.08), rand(-0.4, 0.4),
+              { life: rand(2.4, 4.0), s0: rand(0.5, 0.9), s1: rand(1.6, 2.5), atlas: 1, a: 0.16, c: [0.82, 0.40, 0.24], fin: 0.25, drag: 0.28, rv: rand(-0.2, 0.2) });
           }
         } else if (Math.random() < dt * 14) {
           P.spawn(c.x + rand(-7, 7), c.y + rand(-1.2, 2.5), c.z + rand(-7, 7), rand(0.05, 0.25), rand(-0.03, 0.06), rand(-0.1, 0.1),
@@ -422,6 +514,46 @@ const Effects = (() => {
         }
         if (s.t > s.life + 1) smokes.splice(i, 1);
       }
+      // 燃烧弹火焰体积
+      let nearFire = null, nearD2 = Infinity, nearK = 0;
+      for (let i = fires.length - 1; i >= 0; i--) {
+        const f = fires[i];
+        f.t += dt;
+        if (!f.active || f.t >= f.life) { f.active = false; fires.splice(i, 1); continue; }
+        const k = smoothstep(0, 0.35, f.t) * (f.t > f.life - 1.1 ? smoothstep(f.life, f.life - 1.1, f.t) : 1);
+        const rad = f.r * (0.28 + 0.72 * smoothstep(0, 0.55, f.t));
+        const flameCount = Math.min(5, Math.floor(dt * 52 * k + Math.random()));
+        for (let m = 0; m < flameCount; m++) {
+          const a = Math.random() * 6.28, rr = Math.sqrt(Math.random()) * rad * 0.92;
+          const hot = Math.random();
+          PA.spawn(f.pos.x + Math.cos(a) * rr, f.pos.y + 0.12, f.pos.z + Math.sin(a) * rr,
+            rand(-0.45, 0.45), rand(1.1, 2.3), rand(-0.45, 0.45),
+            { life: rand(0.28, 0.58), s0: rand(0.32, 0.62), s1: rand(0.72, 1.3), atlas: 1, a: 0.75 * k,
+              c: [7.5 + hot * 2.0, 2.2 + hot * 2.4, 0.35 + hot * 0.3], drag: 1.6, grav: -1.7, fin: 0.12, rv: rand(-1.4, 1.4) });
+        }
+        if (Math.random() < dt * 16 * k) {
+          const a = Math.random() * 6.28, rr = Math.sqrt(Math.random()) * rad * 0.85;
+          PA.spawn(f.pos.x + Math.cos(a) * rr, f.pos.y + 0.25, f.pos.z + Math.sin(a) * rr,
+            rand(-0.7, 0.7), rand(2.2, 4.4), rand(-0.7, 0.7),
+            { life: rand(0.4, 0.85), s0: 0.032, s1: 0.008, atlas: 2, a: 0.95 * k, c: [10, 5.2, 1.4], drag: 0.8, grav: 0.8 });
+        }
+        if (Math.random() < dt * 15 * k) {
+          const a = Math.random() * 6.28, rr = Math.sqrt(Math.random()) * rad * 0.78;
+          P.spawn(f.pos.x + Math.cos(a) * rr, f.pos.y + 0.45, f.pos.z + Math.sin(a) * rr,
+            rand(-0.35, 0.35), rand(1.1, 2.1), rand(-0.35, 0.35),
+            { life: rand(1.0, 1.8), s0: rand(0.45, 0.72), s1: rand(1.4, 2.3), atlas: 1, a: 0.34 * k, c: [0.14, 0.12, 0.11], drag: 1.4, grav: -0.45, fin: 0.14, rv: rand(-0.4, 0.4) });
+        }
+        const d2 = f.pos.distanceToSquared(cam.position);
+        if (d2 < nearD2) { nearD2 = d2; nearFire = f; nearK = k; }
+      }
+      if (fireLight) {
+        if (nearFire) {
+          fireLight.position.set(nearFire.pos.x, nearFire.pos.y + 0.85, nearFire.pos.z);
+          fireLight.intensity = (6.5 + Math.sin(nearFire.t * 23) * 1.4 + Math.cos(nearFire.t * 37) * 0.9) * nearK;
+        } else {
+          fireLight.intensity = 0;
+        }
+      }
     },
 
     // 视线是否被烟雾遮挡
@@ -444,10 +576,14 @@ const Effects = (() => {
     },
     clearRound() {
       smokes.length = 0; smokeSys.clear(); shells.length = 0;
+      fires.length = 0;
+      if (fireLight) fireLight.intensity = 0;
+      api.clearImpactMarkers();
       for (const t of tracers) { t.active = false; t.mesh.visible = false; }
     },
     clearAll() { api.clearRound(); holes.clear(); blood.clear(); scorch.clear(); P.clear(); PA.clear(); },
   };
   const _shellM4 = new THREE.Matrix4(), _shellQ = new THREE.Quaternion(), _shellS = new THREE.Vector3();
+  const _impM4 = new THREE.Matrix4(), _impCol = new THREE.Color();
   return api;
 })();

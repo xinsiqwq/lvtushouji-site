@@ -12,6 +12,7 @@ import type {
   ArenaCreateRoomResponse,
   ArenaGameMode,
   ArenaLobbySummary,
+  ArenaMapId,
   ArenaMatchPlayerStat,
   ArenaMatchRecord,
   ArenaMatchesResponse,
@@ -31,6 +32,7 @@ type ArenaLobbyRow = {
   name: string;
   host_name: string;
   mode: string;
+  map_id?: string;
   is_public: number;
   phase: string;
   human_count: number;
@@ -50,6 +52,7 @@ type ArenaMatchRow = {
   room_code: string;
   source: 'online' | 'solo';
   mode: string;
+  map_id?: string;
   winner_team: string;
   score_red: number;
   score_blue: number;
@@ -71,8 +74,26 @@ const MAX_ROOM_HUMANS = 10;
 
 function parseMode(raw: unknown, fallback: ArenaGameMode = 'elimination'): ArenaGameMode {
   if (raw === undefined || raw === null) return fallback;
-  if (raw === 'elimination' || raw === 'deathmatch') return raw;
-  throw new ApiError('对局模式必须为 elimination 或 deathmatch', 400);
+  if (raw === 'elimination' || raw === 'deathmatch' || raw === 'armsrace' || raw === 'retake') {
+    return raw;
+  }
+  throw new ApiError('对局模式必须为 elimination、deathmatch、armsrace 或 retake', 400);
+}
+
+function parseMapId(raw: unknown, fallback: ArenaMapId = 'dust'): ArenaMapId {
+  if (raw === undefined || raw === null || raw === '') return fallback;
+  if (raw === 'dust' || raw === 'frost' || raw === 'harbor' || raw === 'mars') {
+    return raw;
+  }
+  throw new ApiError('地图标识必须为 dust、frost、harbor 或 mars', 400);
+}
+
+function normalizeModeFromRow(raw: string): ArenaGameMode {
+  return raw === 'deathmatch' || raw === 'armsrace' || raw === 'retake' ? raw : 'elimination';
+}
+
+function normalizeMapIdFromRow(raw: string | undefined): ArenaMapId {
+  return raw === 'frost' || raw === 'harbor' || raw === 'mars' ? raw : 'dust';
 }
 
 function parseDifficulty(
@@ -111,7 +132,8 @@ function mapLobbyRow(row: ArenaLobbyRow): ArenaLobbySummary {
     code: row.code,
     name: row.name,
     hostName: row.host_name,
-    mode: row.mode === 'deathmatch' ? 'deathmatch' : 'elimination',
+    mode: normalizeModeFromRow(row.mode),
+    mapId: normalizeMapIdFromRow(row.map_id),
     isPublic: Number(row.is_public) === 1,
     phase,
     humanCount: Number(row.human_count),
@@ -148,7 +170,8 @@ function mapMatchRow(row: ArenaMatchRow, includeVisitorPrefix: boolean): ArenaMa
     id: row.id,
     roomCode: row.room_code,
     source: row.source === 'online' ? 'online' : 'solo',
-    mode: row.mode === 'deathmatch' ? 'deathmatch' : 'elimination',
+    mode: normalizeModeFromRow(row.mode),
+    mapId: normalizeMapIdFromRow(row.map_id),
     winnerTeam,
     scoreRed: Number(row.score_red),
     scoreBlue: Number(row.score_blue),
@@ -220,6 +243,7 @@ arenaRoutes.post('/api/arena/rooms', async (c) => {
   const name = sanitizeRoomName(body.name, '沙暴行动房间');
   const hostName = sanitizeArenaPlayerName(body.hostName, '火星特勤');
   const mode = parseMode(body.mode, 'elimination');
+  const mapId = parseMapId(body.mapId, 'dust');
   let isPublic = true;
   if (body.isPublic !== undefined) {
     if (typeof body.isPublic !== 'boolean') {
@@ -249,6 +273,7 @@ arenaRoutes.post('/api/arena/rooms', async (c) => {
         name,
         hostName,
         mode,
+        mapId,
         isPublic,
         maxHumans,
         botCount,
@@ -361,6 +386,7 @@ arenaRoutes.post('/api/arena/matches', async (c) => {
 
   const body = object(await c.req.json().catch(() => null));
   const mode = parseMode(body.mode);
+  const mapId = parseMapId(body.mapId, 'dust');
   const winnerTeam =
     body.winnerTeam === 'red' || body.winnerTeam === 'blue' || body.winnerTeam === 'draw'
       ? body.winnerTeam
@@ -453,6 +479,7 @@ arenaRoutes.post('/api/arena/matches', async (c) => {
     roomCode,
     source: matchSource,
     mode,
+    mapId,
     winnerTeam,
     scoreRed,
     scoreBlue,

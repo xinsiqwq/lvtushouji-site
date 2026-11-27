@@ -4,6 +4,7 @@ import type {
   ArenaBotDifficulty,
   ArenaGameMode,
   ArenaLobbySummary,
+  ArenaMapId,
   ArenaMatchRecord,
   ArenaPhase,
 } from '../../shared/types';
@@ -28,6 +29,7 @@ type RoomMeta = {
   name: string;
   hostName: string;
   mode: ArenaGameMode;
+  mapId: ArenaMapId;
   isPublic: boolean;
   maxHumans: number;
   botCount: number;
@@ -52,6 +54,7 @@ type InitRoomPayload = {
   name: string;
   hostName: string;
   mode: ArenaGameMode;
+  mapId?: ArenaMapId;
   isPublic: boolean;
   maxHumans: number;
   botCount: number;
@@ -84,6 +87,32 @@ function normalizeSandstormPhase(raw: unknown): ArenaPhase {
     : 'lobby';
 }
 
+function normalizeArenaMode(raw: unknown): ArenaGameMode {
+  return raw === 'deathmatch' || raw === 'armsrace' || raw === 'retake' ? raw : 'elimination';
+}
+
+function normalizeArenaMapId(raw: unknown): ArenaMapId {
+  return raw === 'frost' || raw === 'harbor' || raw === 'mars' ? raw : 'dust';
+}
+
+function mapSandstormWireMode(raw: unknown): ArenaGameMode | null {
+  if (raw === 'comp' || raw === 'elimination') return 'elimination';
+  if (raw === 'tdm' || raw === 'deathmatch') return 'deathmatch';
+  if (raw === 'armsrace') return 'armsrace';
+  if (raw === 'retake') return 'retake';
+  return null;
+}
+
+function mapSandstormWireMap(raw: unknown): ArenaMapId | null {
+  if (raw === 'dust' || raw === 'frost' || raw === 'harbor' || raw === 'mars') return raw;
+  return null;
+}
+
+function clampSandstormScore(raw: unknown): number | null {
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) return null;
+  return Math.max(0, Math.min(999, Math.trunc(raw)));
+}
+
 function timingSafeEqualText(a: string, b: string): boolean {
   const aBytes = textEncoder.encode(a);
   const bBytes = textEncoder.encode(b);
@@ -103,14 +132,15 @@ export async function syncArenaLobbyRow(
   await db
     .prepare(
       `INSERT INTO arena_lobbies (
-         code, name, host_name, mode, is_public, phase, human_count, max_humans,
+         code, name, host_name, mode, map_id, is_public, phase, human_count, max_humans,
          bot_count, bot_difficulty, rounds_to_win, target_kills, score_red, score_blue,
          created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(code) DO UPDATE SET
          name = excluded.name,
          host_name = excluded.host_name,
          mode = excluded.mode,
+         map_id = excluded.map_id,
          is_public = excluded.is_public,
          phase = excluded.phase,
          human_count = excluded.human_count,
@@ -128,6 +158,7 @@ export async function syncArenaLobbyRow(
       summary.name,
       summary.hostName,
       summary.mode,
+      summary.mapId,
       summary.isPublic ? 1 : 0,
       summary.phase,
       summary.humanCount,
@@ -159,16 +190,17 @@ export async function insertArenaMatchAndPrune(
     db
       .prepare(
         `INSERT OR REPLACE INTO arena_matches (
-           id, room_code, source, mode, winner_team, score_red, score_blue,
+           id, room_code, source, mode, map_id, winner_team, score_red, score_blue,
            mvp_name, mvp_kills, mvp_deaths, mvp_headshots, duration_ms,
            player_count, bot_count, players_json, visitor_id, created_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .bind(
         record.id,
         record.roomCode,
         record.source,
         record.mode,
+        record.mapId,
         record.winnerTeam,
         record.scoreRed,
         record.scoreBlue,
@@ -206,6 +238,8 @@ export class ArenaRoomDO extends DurableObject<AppBindings> {
   private sandstormPhase: ArenaPhase = 'lobby';
   private archiveToken = '';
   private lastArchiveAt = 0;
+  private scoreRed = 0;
+  private scoreBlue = 0;
 
   constructor(ctx: DurableObjectState, env: AppBindings) {
     super(ctx, env);
@@ -217,6 +251,7 @@ export class ArenaRoomDO extends DurableObject<AppBindings> {
           name TEXT NOT NULL,
           host_name TEXT NOT NULL,
           mode TEXT NOT NULL,
+          map_id TEXT NOT NULL DEFAULT 'dust',
           is_public INTEGER NOT NULL,
           max_humans INTEGER NOT NULL,
           bot_count INTEGER NOT NULL,
@@ -233,9 +268,23 @@ export class ArenaRoomDO extends DurableObject<AppBindings> {
           next_pid INTEGER NOT NULL DEFAULT 1,
           phase TEXT NOT NULL DEFAULT 'lobby',
           archive_token TEXT NOT NULL DEFAULT '',
-          last_archive_at INTEGER NOT NULL DEFAULT 0
+          last_archive_at INTEGER NOT NULL DEFAULT 0,
+          score_red INTEGER NOT NULL DEFAULT 0,
+          score_blue INTEGER NOT NULL DEFAULT 0
         )
       `);
+
+      const metaCols = new Set(
+        this.ctx.storage.sql
+          .exec<{ name: string }>('PRAGMA table_info(room_meta)')
+          .toArray()
+          .map((col) => col.name),
+      );
+      if (!metaCols.has('map_id')) {
+        this.ctx.storage.sql.exec(
+          "ALTER TABLE room_meta ADD COLUMN map_id TEXT NOT NULL DEFAULT 'dust'",
+        );
+      }
 
       const cols = new Set(
         this.ctx.storage.sql
@@ -258,6 +307,16 @@ export class ArenaRoomDO extends DurableObject<AppBindings> {
           'ALTER TABLE sandstorm_state ADD COLUMN last_archive_at INTEGER NOT NULL DEFAULT 0',
         );
       }
+      if (!cols.has('score_red')) {
+        this.ctx.storage.sql.exec(
+          'ALTER TABLE sandstorm_state ADD COLUMN score_red INTEGER NOT NULL DEFAULT 0',
+        );
+      }
+      if (!cols.has('score_blue')) {
+        this.ctx.storage.sql.exec(
+          'ALTER TABLE sandstorm_state ADD COLUMN score_blue INTEGER NOT NULL DEFAULT 0',
+        );
+      }
 
       this.loadStateFromSqlite();
     });
@@ -269,13 +328,16 @@ export class ArenaRoomDO extends DurableObject<AppBindings> {
       .toArray();
     const current = rows[0] ? Math.max(1, Number(rows[0].next_pid)) : 1;
     this.ctx.storage.sql.exec(
-      `INSERT INTO sandstorm_state (id, next_pid, phase, archive_token, last_archive_at)
-       VALUES (1, ?, ?, ?, ?)
+      `INSERT INTO sandstorm_state (
+         id, next_pid, phase, archive_token, last_archive_at, score_red, score_blue
+       ) VALUES (1, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET next_pid = excluded.next_pid`,
       current + 1,
       this.sandstormPhase,
       this.archiveToken,
       this.lastArchiveAt,
+      this.scoreRed,
+      this.scoreBlue,
     );
     return current;
   }
@@ -287,6 +349,7 @@ export class ArenaRoomDO extends DurableObject<AppBindings> {
         name: string;
         host_name: string;
         mode: string;
+        map_id?: string;
         is_public: number;
         max_humans: number;
         bot_count: number;
@@ -304,6 +367,8 @@ export class ArenaRoomDO extends DurableObject<AppBindings> {
       this.sandstormPhase = 'lobby';
       this.archiveToken = '';
       this.lastArchiveAt = 0;
+      this.scoreRed = 0;
+      this.scoreBlue = 0;
       return;
     }
 
@@ -311,7 +376,8 @@ export class ArenaRoomDO extends DurableObject<AppBindings> {
       code: row.code,
       name: row.name,
       hostName: row.host_name,
-      mode: row.mode === 'deathmatch' ? 'deathmatch' : 'elimination',
+      mode: normalizeArenaMode(row.mode),
+      mapId: normalizeArenaMapId(row.map_id),
       isPublic: Number(row.is_public) === 1,
       maxHumans: Math.max(2, Math.min(MAX_ROOM_HUMANS, Number(row.max_humans) || MAX_ROOM_HUMANS)),
       botCount: Math.max(0, Math.min(10, Number(row.bot_count) || 0)),
@@ -330,17 +396,25 @@ export class ArenaRoomDO extends DurableObject<AppBindings> {
         phase: string;
         archive_token: string;
         last_archive_at: number;
-      }>('SELECT phase, archive_token, last_archive_at FROM sandstorm_state WHERE id = 1')
+        score_red?: number;
+        score_blue?: number;
+      }>(
+        'SELECT phase, archive_token, last_archive_at, score_red, score_blue FROM sandstorm_state WHERE id = 1',
+      )
       .toArray();
     const state = stateRows[0];
     if (state) {
       this.sandstormPhase = normalizeSandstormPhase(state.phase);
       this.archiveToken = typeof state.archive_token === 'string' ? state.archive_token : '';
       this.lastArchiveAt = Math.max(0, Number(state.last_archive_at) || 0);
+      this.scoreRed = Math.max(0, Math.trunc(Number(state.score_red) || 0));
+      this.scoreBlue = Math.max(0, Math.trunc(Number(state.score_blue) || 0));
     } else {
       this.sandstormPhase = 'lobby';
       this.archiveToken = '';
       this.lastArchiveAt = 0;
+      this.scoreRed = 0;
+      this.scoreBlue = 0;
     }
   }
 
@@ -348,13 +422,14 @@ export class ArenaRoomDO extends DurableObject<AppBindings> {
     if (!this.meta) return;
     this.ctx.storage.sql.exec(
       `INSERT OR REPLACE INTO room_meta (
-         id, code, name, host_name, mode, is_public, max_humans, bot_count,
+         id, code, name, host_name, mode, map_id, is_public, max_humans, bot_count,
          bot_difficulty, rounds_to_win, target_kills, created_at, expires_at
-       ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       this.meta.code,
       this.meta.name,
       this.meta.hostName,
       this.meta.mode,
+      this.meta.mapId,
       this.meta.isPublic ? 1 : 0,
       this.meta.maxHumans,
       this.meta.botCount,
@@ -368,15 +443,20 @@ export class ArenaRoomDO extends DurableObject<AppBindings> {
 
   private saveSandstormStateToSqlite(): void {
     this.ctx.storage.sql.exec(
-      `INSERT INTO sandstorm_state (id, next_pid, phase, archive_token, last_archive_at)
-       VALUES (1, 1, ?, ?, ?)
+      `INSERT INTO sandstorm_state (
+         id, next_pid, phase, archive_token, last_archive_at, score_red, score_blue
+       ) VALUES (1, 1, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          phase = excluded.phase,
          archive_token = excluded.archive_token,
-         last_archive_at = excluded.last_archive_at`,
+         last_archive_at = excluded.last_archive_at,
+         score_red = excluded.score_red,
+         score_blue = excluded.score_blue`,
       this.sandstormPhase,
       this.archiveToken,
       this.lastArchiveAt,
+      this.scoreRed,
+      this.scoreBlue,
     );
   }
 
@@ -414,6 +494,7 @@ export class ArenaRoomDO extends DurableObject<AppBindings> {
       name: this.meta.name,
       hostName,
       mode: this.meta.mode,
+      mapId: this.meta.mapId,
       isPublic: this.meta.isPublic,
       phase: humanCount === 0 ? 'lobby' : this.sandstormPhase,
       humanCount,
@@ -422,8 +503,8 @@ export class ArenaRoomDO extends DurableObject<AppBindings> {
       botDifficulty: this.meta.botDifficulty,
       roundsToWin: this.meta.roundsToWin,
       targetKills: this.meta.targetKills,
-      scoreRed: 0,
-      scoreBlue: 0,
+      scoreRed: humanCount === 0 ? 0 : this.scoreRed,
+      scoreBlue: humanCount === 0 ? 0 : this.scoreBlue,
       createdAt: this.meta.createdAt,
       updatedAt: new Date().toISOString(),
     };
@@ -469,6 +550,8 @@ export class ArenaRoomDO extends DurableObject<AppBindings> {
     this.sandstormPhase = 'lobby';
     this.archiveToken = '';
     this.lastArchiveAt = 0;
+    this.scoreRed = 0;
+    this.scoreBlue = 0;
     try {
       this.ctx.storage.sql.exec('DELETE FROM room_meta');
       this.ctx.storage.sql.exec('DELETE FROM sandstorm_state');
@@ -541,7 +624,8 @@ export class ArenaRoomDO extends DurableObject<AppBindings> {
         code: payload.code.toUpperCase(),
         name: sanitizeRoomName(payload.name),
         hostName: sanitizeArenaPlayerName(payload.hostName),
-        mode: payload.mode === 'deathmatch' ? 'deathmatch' : 'elimination',
+        mode: normalizeArenaMode(payload.mode),
+        mapId: normalizeArenaMapId(payload.mapId),
         isPublic: Boolean(payload.isPublic),
         maxHumans: Math.max(
           2,
@@ -560,10 +644,12 @@ export class ArenaRoomDO extends DurableObject<AppBindings> {
       this.sandstormPhase = 'lobby';
       this.archiveToken = '';
       this.lastArchiveAt = 0;
+      this.scoreRed = 0;
+      this.scoreBlue = 0;
 
       this.saveMetaToSqlite();
       this.ctx.storage.sql.exec(
-        "INSERT OR REPLACE INTO sandstorm_state (id, next_pid, phase, archive_token, last_archive_at) VALUES (1, 1, 'lobby', '', 0)",
+        "INSERT OR REPLACE INTO sandstorm_state (id, next_pid, phase, archive_token, last_archive_at, score_red, score_blue) VALUES (1, 1, 'lobby', '', 0, 0, 0)",
       );
       // Idle reclaim if creator never joins within 90s; refreshed on WS connect
       await this.ctx.storage.setAlarm(Math.min(expiresAt, now + EMPTY_ROOM_IDLE_MS));
@@ -812,45 +898,90 @@ export class ArenaRoomDO extends DurableObject<AppBindings> {
       const bodyJson = textPayload.slice(sep + 1);
       const framed = `${att.pid}|${bodyJson}`;
 
-      // Zero-parse fast path for 64Hz `"t":"s"` snapshots & rosters; only inspect rare lobby/start/end control broadcasts
+      // Zero-parse fast path for 64Hz `"t":"s"` snapshots & rosters; only inspect rare lobby/start/end/score control broadcasts
       if (
         to === '*' &&
         (bodyJson.includes('"t":"lobby"') ||
           bodyJson.includes('"t":"start"') ||
-          bodyJson.includes('"t":"end"'))
+          bodyJson.includes('"t":"end"') ||
+          bodyJson.includes('"t":"score"'))
       ) {
         try {
           const ctrl = JSON.parse(bodyJson) as {
             t?: string;
             ing?: boolean;
-            opts?: { mode?: string };
+            opts?: { mode?: string; map?: string };
+            sc?: unknown;
           };
-          let nextPhase: ArenaPhase | null = null;
-          if (ctrl.t === 'start') nextPhase = 'live';
-          else if (ctrl.t === 'end') nextPhase = 'lobby';
-          else if (ctrl.t === 'lobby') nextPhase = ctrl.ing ? 'live' : 'lobby';
 
-          let nextMode: ArenaGameMode | null = null;
-          if (ctrl.opts?.mode === 'comp') nextMode = 'elimination';
-          else if (ctrl.opts?.mode === 'tdm') nextMode = 'deathmatch';
+          if (
+            ctrl.t === 'lobby' ||
+            ctrl.t === 'start' ||
+            ctrl.t === 'end' ||
+            ctrl.t === 'score'
+          ) {
+            let nextPhase: ArenaPhase | null = null;
+            if (ctrl.t === 'start') nextPhase = 'live';
+            else if (ctrl.t === 'end') nextPhase = 'lobby';
+            else if (ctrl.t === 'lobby') nextPhase = ctrl.ing ? 'live' : 'lobby';
 
-          let dirty = false;
-          let stateDirty = false;
-          if (nextPhase && nextPhase !== this.sandstormPhase) {
-            this.sandstormPhase = nextPhase;
-            stateDirty = true;
-            dirty = true;
-          }
-          if (stateDirty) {
-            this.saveSandstormStateToSqlite();
-          }
-          if (nextMode && nextMode !== this.meta.mode) {
-            this.meta.mode = nextMode;
-            this.saveMetaToSqlite();
-            dirty = true;
-          }
-          if (dirty) {
-            this.ctx.waitUntil(this.syncSandstormLobbyToD1());
+            const nextMode = mapSandstormWireMode(ctrl.opts?.mode);
+            const nextMapId = mapSandstormWireMap(ctrl.opts?.map);
+
+            let nextScoreRed: number | null = null;
+            let nextScoreBlue: number | null = null;
+            if (ctrl.t === 'start' || ctrl.t === 'end' || (ctrl.t === 'lobby' && ctrl.ing === false)) {
+              nextScoreRed = 0;
+              nextScoreBlue = 0;
+            } else if (ctrl.t === 'score' && Array.isArray(ctrl.sc) && ctrl.sc.length >= 2) {
+              const ctScore = clampSandstormScore(ctrl.sc[0]);
+              const tScore = clampSandstormScore(ctrl.sc[1]);
+              if (ctScore !== null && tScore !== null) {
+                nextScoreBlue = ctScore;
+                nextScoreRed = tScore;
+              }
+            }
+
+            let dirty = false;
+            let stateDirty = false;
+            let metaDirty = false;
+
+            if (nextPhase && nextPhase !== this.sandstormPhase) {
+              this.sandstormPhase = nextPhase;
+              stateDirty = true;
+              dirty = true;
+            }
+            if (
+              nextScoreRed !== null &&
+              nextScoreBlue !== null &&
+              (nextScoreRed !== this.scoreRed || nextScoreBlue !== this.scoreBlue)
+            ) {
+              this.scoreRed = nextScoreRed;
+              this.scoreBlue = nextScoreBlue;
+              stateDirty = true;
+              dirty = true;
+            }
+            if (stateDirty) {
+              this.saveSandstormStateToSqlite();
+            }
+
+            if (nextMode && nextMode !== this.meta.mode) {
+              this.meta.mode = nextMode;
+              metaDirty = true;
+              dirty = true;
+            }
+            if (nextMapId && nextMapId !== this.meta.mapId) {
+              this.meta.mapId = nextMapId;
+              metaDirty = true;
+              dirty = true;
+            }
+            if (metaDirty) {
+              this.saveMetaToSqlite();
+            }
+
+            if (dirty) {
+              this.ctx.waitUntil(this.syncSandstormLobbyToD1());
+            }
           }
         } catch {
           /* Non-JSON body; relay untouched */
@@ -934,6 +1065,8 @@ export class ArenaRoomDO extends DurableObject<AppBindings> {
       const wasLive = this.sandstormPhase !== 'lobby';
       if (wasLive) {
         this.sandstormPhase = 'lobby';
+        this.scoreRed = 0;
+        this.scoreBlue = 0;
         stateDirty = true;
       }
 
@@ -994,8 +1127,10 @@ export class ArenaRoomDO extends DurableObject<AppBindings> {
     }
 
     if (remaining.length === 0 && this.meta) {
-      if (this.sandstormPhase !== 'lobby') {
+      if (this.sandstormPhase !== 'lobby' || this.scoreRed !== 0 || this.scoreBlue !== 0) {
         this.sandstormPhase = 'lobby';
+        this.scoreRed = 0;
+        this.scoreBlue = 0;
         stateDirty = true;
       }
       const nextAlarm = Math.min(this.meta.expiresAt, Date.now() + EMPTY_ROOM_IDLE_MS);

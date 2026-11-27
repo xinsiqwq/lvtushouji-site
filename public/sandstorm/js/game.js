@@ -20,20 +20,26 @@ function rayEllipsoid(e, o, d) {
   return t < 0 ? Infinity : t;
 }
 const hToV = (h) => 2 * Math.atan(Math.tan(h * 0.5 * DEG) * 0.75) / DEG;
+const safeEsc = (s) => (typeof escHtml === 'function'
+  ? escHtml(s)
+  : String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])));
+const disposeObj = (obj) => { if (obj && typeof Models !== 'undefined' && Models.disposeObject) Models.disposeObject(obj); };
 
 class Game {
   constructor(eng, opts) {
     this.eng = eng; this.opts = opts;
     this.scene = eng.scene; this.world = eng.world; this.map = eng.map; this.nav = eng.nav; this.camera = eng.camera; this.vm = eng.vm;
-    this.time = 0; this.actors = []; this.timers = []; this.grenades = []; this.drops = []; this.ragdolls = [];
+    this.time = 0; this.actors = []; this.timers = []; this.grenades = []; this.fires = []; this.pings = []; this.drops = []; this.ragdolls = [];
     this.frozen = false; this.noFire = false; this.infiniteAmmo = false;
     this.shake = 0; this.flashAmt = 0; this.flashHold = 0; this.dmgFlash = 0; this.heartT = 0;
-    this.fps = 60; this.spectating = false; this.viewTarget = null; this.deathT = 0; this.over = false; this.overT = 0; this._archived = false;
+    this.fps = 60; this.spectating = false; this.specFirstPerson = Settings.data.specFirstPerson !== false;
+    this.viewTarget = null; this.deathT = 0; this.deathHeader = null; this.over = false; this.overT = 0; this._archived = false;
     this.spotT = 0; this.crouchToggle = false; this.killer = null;
     this._rh = {};
     // 联机：net = NetHost（房主，权威对局）或 NetClient（加入者，照快照显示）
     this.net = opts.net || null; this.client = !!(this.net && this.net.client);
-    const M = this.client ? ModeMirror : { tdm: ModeTDM, comp: ModeComp, range: ModeRange }[opts.mode];
+    const modes = { tdm: ModeTDM, comp: ModeComp, range: ModeRange, armsrace: ModeArmsRace, retake: ModeRetake };
+    const M = this.client ? ModeMirror : (modes[opts.mode] || ModeComp);
     this.mode = new M(this, opts.mode);
     this.player = this.createActor(opts.team, false, opts.name || '你');
     this.vm.setTeam(opts.team);
@@ -58,8 +64,10 @@ class Game {
   // 房主：对局中途有人加入 / 离开
   addRemote(h) {
     const a = this.createActor(h.team, false, h.name, h), md = this.mode;
-    if (md.id === 'tdm') { md.loadout(a); md.spawn(a); }
-    else { a.money = 800; a.stripForNewGame(); a.alive = false; }   // 爆破：下一回合出生
+    if (md.id === 'tdm' || md.id === 'armsrace') {
+      if (md.id === 'armsrace') { a.arLevel = 0; a.arProgress = 0; a.overrideSkin = null; }
+      md.loadout(a); md.spawn(a);
+    } else { a.money = 800; a.stripForNewGame(); a.alive = false; }   // 爆破 / 回防：下一回合出生
     return a;
   }
   removeRemote(pid) { const a = this.actors.find((x) => x.remote && x.pid === pid); if (a) this.removeActor(a); }
@@ -192,7 +200,7 @@ class Game {
     let dmg = def.damage, traveled = 0, pens = 0, wall = false;
     let ox = o.x, oy = o.y, oz = o.z;
     const maxRange = 220, exclude = new Set([sh]);
-    let tracerEnd = null, hitSomeone = false;
+    let tracerEnd = null, hitSomeone = false, hitHead = false;
     for (let iter = 0; iter < 6; iter++) {
       const remaining = maxRange - traveled;
       if (remaining <= 0) break;
@@ -213,6 +221,7 @@ class Game {
         }
         this.applyDamage(v, sh, damage, ah.group, def, d, pt, wall);
         hitSomeone = true;
+        if (ah.group === 'head' && !friendly) hitHead = true;
         exclude.add(v);
         dmg *= 0.55;
         traveled += ah.t + 0.05; ox = pt.x + d.x * 0.05; oy = pt.y + d.y * 0.05; oz = pt.z + d.z * 0.05;
@@ -249,6 +258,17 @@ class Game {
       ox = px + d.x * 0.01; oy = py + d.y * 0.01; oz = pz + d.z * 0.01;
     }
     if (!tracerEnd) tracerEnd = new THREE.Vector3(o.x + d.x * 100, o.y + d.y * 100, o.z + d.z * 100);
+    // 靶场 2.0：记录弹道相对准星偏移 & 3D 弹着标记
+    if (sh === this.player && this.mode && this.mode.id === 'range') {
+      const F = dirFromAngles(sh.yaw, sh.pitch, _g2);
+      const R = _g3.set(Math.cos(sh.yaw), 0, -Math.sin(sh.yaw));
+      const Up = _g4.crossVectors(R, F).normalize();
+      const df = d.dot(F);
+      const dxDeg = Math.atan2(d.dot(R), df) / DEG;
+      const dyDeg = Math.atan2(d.dot(Up), df) / DEG;
+      if (this.mode.recordShot) this.mode.recordShot(dxDeg, dyDeg, hitSomeone, hitHead, sh.lastShot, sh.recoilIdx);
+      if (this.mode.showImpacts && Effects.impactMarker) Effects.impactMarker(tracerEnd, hitSomeone);
+    }
     // 曳光
     if (def.tracer) {
       let start;
@@ -344,7 +364,17 @@ class Game {
     if (att && att !== v) {
       v.damageBy.set(att, (v.damageBy.get(att) || 0) + d);
       v.lastAttacker = att;
-      if (att.team !== v.team) att.damageDealt = (att.damageDealt || 0) + d;
+      if (att.team !== v.team) {
+        att.damageDealt = (att.damageDealt || 0) + d;
+        if (!att.dmgTo) att.dmgTo = new Map();
+        if (!v.dmgFrom) v.dmgFrom = new Map();
+        const gt = att.dmgTo.get(v) || { dmg: 0, hits: 0 };
+        gt.dmg += d; gt.hits += 1;
+        att.dmgTo.set(v, gt);
+        const tf = v.dmgFrom.get(att) || { dmg: 0, hits: 0 };
+        tf.dmg += d; tf.hits += 1;
+        v.dmgFrom.set(att, tf);
+      }
     }
     v.lastHitTime = this.time;
     if (def && def.type !== 'knife' && group !== 'fall') v.velMod = Math.min(v.velMod, group === 'leg' ? 0.62 : 0.5);
@@ -373,10 +403,32 @@ class Game {
     if (v.hp <= 0) this.kill(v, att, def, group === 'head', dir, wall, group, melee);
   }
 
-  kill(v, att, def, hs, dir, wall, group) {
+  getCombatSummary(a = this.player) {
+    if (!a) return { given: [], taken: [] };
+    const toList = (mp) => {
+      if (!mp || !mp.size) return [];
+      const out = [];
+      for (const [other, st] of mp) {
+        if (!other || !st || st.dmg <= 0) continue;
+        out.push({
+          name: other.name || '未知',
+          team: other.team || 'CT',
+          dmg: Math.round(st.dmg),
+          hits: st.hits || 1,
+          dead: !other.alive,
+        });
+      }
+      out.sort((x, y) => y.dmg - x.dmg || y.hits - x.hits);
+      return out;
+    };
+    return { given: toList(a.dmgTo), taken: toList(a.dmgFrom) };
+  }
+
+  kill(v, att, def, hs, dir, wall, group, melee) {
     v.alive = false; v.hp = 0; v.deaths++;
     v.sliding = false; v.planting = false; v.defusing = false; v.scoped = 0; v.reloading = false;
     const md = this.mode;
+    const isMelee = !!melee || !!(def && def.type === 'knife');
     if (att && att !== v) {
       if (att.team !== v.team) {
         att.kills++; att.roundKills++;
@@ -388,21 +440,22 @@ class Game {
     HUD.killfeed({ killer: att && att !== v ? att : null, victim: v, weapon: def ? def.name : '坠落', hs, wallbang: wall, mine: (att && att.isPlayer) || v.isPlayer });
     if (att && att.isPlayer && att !== v && v.team !== att.team) {
       Sound.play('kill_confirm', { vol: 0.48 });
+      if (def && def.id && md.id !== 'range' && typeof StatTrak !== 'undefined' && StatTrak.recordKill) StatTrak.recordKill(def.id);
       const streaks = { 2: ['双杀 · DOUBLE KILL', hs ? '爆头终结' : '连续击杀'], 3: ['三杀 · TRIPLE KILL', '手感火热！'], 4: ['四杀 · QUADRA KILL', '势不可挡！'], 5: ['五杀 · ACE！', '全场最佳表现'] };
       const st = streaks[att.roundKills];
       if (st && md.phase === 'live' && !this.over) HUD.center(st[0], 'win-' + att.team.toLowerCase(), 1.8, st[1]);
     }
     // 先广播：加入者要在武器掉落之前用同一个姿态生成布娃娃
-    if (this.net) this.emit({ t: 'kill', v: v.id, k: att ? att.id : 0, w: def ? def.name : '坠落', hs: hs ? 1 : 0, wb: wall ? 1 : 0, dir: dir ? nv(dir) : null, g: group });
+    if (this.net) this.emit({ t: 'kill', v: v.id, k: att ? att.id : 0, w: def ? def.name : '坠落', wid: def && def.id ? def.id : '', hs: hs ? 1 : 0, wb: wall ? 1 : 0, dir: dir ? nv(dir) : null, g: group });
     // 掉落
     if (v.inv.primary) v.lastPrimary = v.inv.primary.id;
     const drop = v.inv.primary || v.inv.secondary;
-    if (drop && md.id !== 'range') { this.dropWeapon(v, drop); if (drop === v.inv.primary) v.inv.primary = null; else v.inv.secondary = null; }
+    if (drop && md.id !== 'range' && md.id !== 'armsrace') { this.dropWeapon(v, drop); if (drop === v.inv.primary) v.inv.primary = null; else v.inv.secondary = null; }
     if (v.inv.c4) { v.inv.c4 = false; md.dropBomb && md.dropBomb(v); }
     this.makeRagdoll(v, dir, group, hs);
     if (v.brain) v.brain.reset();
     if (v.isPlayer) this.playerDied(att && att !== v ? att : null, def ? def.name : '', hs, wall);
-    md.onKill(v, att, hs);
+    md.onKill(v, att, hs, isMelee);
   }
   // 布娃娃（房主和加入者共用）
   makeRagdoll(v, dir, group, hs) {
@@ -416,14 +469,36 @@ class Game {
     if (this.ragdolls.length > 14) { const r = this.ragdolls.shift(); r.dispose(); }
     if (hs || Math.random() < 0.4) this.later(1.2, () => { if (!v.alive && h.ragdoll) Effects.bloodPool(h.ragdoll.p[1]); });
   }
+  formatDeathHeader(h = this.deathHeader) {
+    if (!h || !h.killerName) return '你阵亡了';
+    const cls = h.killerTeam === 'T' ? 'cT' : 'cCT';
+    return `被 <span class="${cls}">${safeEsc(h.killerName)}</span> 使用 ${safeEsc(h.weapon || '')} 击杀${h.hs ? '（爆头）' : ''}${h.wall ? '（穿墙）' : ''}`;
+  }
+  showDeathHeader(respawnNote) {
+    if (!this.deathHeader) this.deathHeader = { killerName: '', killerTeam: '', weapon: '', hs: false, wall: false, remainingHp: 0, respawnNote: '' };
+    if (respawnNote !== undefined) this.deathHeader.respawnNote = respawnNote;
+    const h = this.deathHeader;
+    const parts = [];
+    if (h.killerName) parts.push(`对方剩余生命 ${Math.max(0, Math.ceil(h.remainingHp || 0))}`);
+    if (h.respawnNote) parts.push(h.respawnNote);
+    HUD.showDeath(this.formatDeathHeader(h), parts.join(' · '));
+  }
   // 本机玩家阵亡：死亡视角 + 提示
   playerDied(killer, wname, hs, wall) {
     const v = this.player;
     this.deathT = 0; this.killer = killer;
     // 死亡视角：从自己眼睛位置拉到尸体后上方，鼠标可自由环绕（不再自动锁定击杀者）
     this.deathYaw = v.yaw; this.deathPitch = -0.42; this.deathEye = v.eyePos(new THREE.Vector3()); this.deathQuat = this.camera.quaternion.clone();
-    const kd = killer ? `被 <span class="c${killer.team}">${killer.name}</span> 使用 ${wname} 击杀${hs ? '（爆头）' : ''}${wall ? '（穿墙）' : ''}` : '你阵亡了';
-    HUD.showDeath(kd, killer ? `对方剩余生命 ${Math.max(0, killer.hp)}` : '');
+    this.deathHeader = {
+      killerName: killer ? killer.name : '',
+      killerTeam: killer ? killer.team : '',
+      weapon: wname || '',
+      hs: !!hs,
+      wall: !!wall,
+      remainingHp: killer ? Math.max(0, killer.hp) : 0,
+      respawnNote: '',
+    };
+    this.showDeathHeader();
     Sound.stopAll();
   }
 
@@ -443,7 +518,7 @@ class Game {
     return d;
   }
   dropActive(a) {
-    if (!a.alive) return;
+    if (!a.alive || (this.mode && this.mode.id === 'armsrace')) return;
     if (a.slot === 'primary' && a.inv.primary) { this.dropWeapon(a, a.inv.primary); a.inv.primary = null; }
     else if (a.slot === 'secondary' && a.inv.secondary) { this.dropWeapon(a, a.inv.secondary); a.inv.secondary = null; }
     else if (a.slot === 'c4' && a.inv.c4) { a.inv.c4 = false; this.mode.dropBomb && this.mode.dropBomb(a, true); }
@@ -498,14 +573,21 @@ class Game {
     a.sfx('magin', 0.4);
     if (a.slot === 'knife' || (def.slot === 1 && a.slot === 'secondary') || a.isBot) { a.switchTo(def.slot === 1 ? 'primary' : 'secondary'); }
   }
-  removeDrop(i) { this.emit({ t: 'undrop', n: this.drops[i].nid }); this.scene.remove(this.drops[i].mesh); this.drops.splice(i, 1); }
+  removeDrop(i) {
+    const d = this.drops[i];
+    if (!d) return;
+    this.emit({ t: 'undrop', n: d.nid });
+    this.scene.remove(d.mesh);
+    disposeObj(d.mesh);
+    this.drops.splice(i, 1);
+  }
 
-  // ---------------- 投掷物 ----------------
+  // ---------------- 投掷物 & 燃烧弹火焰 & 战术标点 ----------------
   spawnGrenade(id, pos, vel, owner) {
     this.emit({ t: 'nade', id, p: nv(pos), v: nv(vel), a: owner.id });
     const mdl = Models.thirdPerson(id);
     this.scene.add(mdl.group);
-    this.grenades.push({ id, pos: pos.clone(), vel: vel.clone(), owner, t: 0, mesh: mdl.group, rest: false, still: 0, spin: new THREE.Vector3(rand(-12, 12), rand(-12, 12), rand(-12, 12)), done: false });
+    this.grenades.push({ id, pos: pos.clone(), vel: vel.clone(), owner, t: 0, mesh: mdl.group, rest: false, shatter: false, still: 0, spin: new THREE.Vector3(rand(-12, 12), rand(-12, 12), rand(-12, 12)), done: false });
   }
   updateGrenades(dt) {
     const W = this.world;
@@ -524,6 +606,9 @@ class Game {
           g.pos.addScaledVector(g.vel, tt / sp);
           remaining -= tt / sp;
           const n = _g1.set(h.nx, h.ny, h.nz);
+          if (g.id === 'molotov' && n.y > 0.55) {
+            g.rest = true; g.shatter = true; g.vel.set(0, 0, 0); break;
+          }
           const vn = g.vel.dot(n);
           g.vel.addScaledVector(n, -1.45 * vn);
           g.vel.multiplyScalar(0.72);
@@ -536,9 +621,22 @@ class Game {
       }
       g.mesh.position.copy(g.pos);
       if (g.rest) g.still += dt;
-      const det = (g.id === 'he' || g.id === 'flash') ? g.t >= 1.6 : (g.rest && g.still > 0.6) || g.t > 4;
+      let det = false;
+      if (g.id === 'molotov') {
+        if (g.shatter || g.t >= 2.2) {
+          if (!g.shatter) {
+            const top = W.surfaceTop(g.pos.x, g.pos.z, g.pos.y + 0.5);
+            if (isFinite(top) && top <= g.pos.y + 0.25) g.pos.y = top + 0.04;
+          }
+          det = true;
+        }
+      } else if (g.id === 'he' || g.id === 'flash') {
+        det = g.t >= 1.6;
+      } else {
+        det = (g.rest && g.still > 0.6) || g.t > 4;
+      }
       if (det && !g.done) { g.done = true; this.detonate(g); }
-      if (g.done && (g.id !== 'smoke' || g.t > 4.5)) { this.scene.remove(g.mesh); this.grenades.splice(i, 1); }
+      if (g.done && (g.id !== 'smoke' || g.t > 4.5)) { this.scene.remove(g.mesh); disposeObj(g.mesh); this.grenades.splice(i, 1); }
     }
   }
   detonate(g) {
@@ -555,7 +653,7 @@ class Game {
         if (!this.world.clear(p.x, p.y + 0.15, p.z, c.x, c.y, c.z)) continue;
         const dmg = 98 * Math.pow(1 - d / 9.5, 1.4);
         if (a !== g.owner && a.team === g.owner.team && !this.opts.ff) continue;
-        this.applyDamage(a, g.owner, a === g.owner ? dmg * 0.6 : dmg, 'chest', { armorPen: 0.5, type: 'grenade', name: '高爆手雷', killReward: 300 }, _g3.subVectors(c, p).normalize(), c, false);
+        this.applyDamage(a, g.owner, a === g.owner ? dmg * 0.6 : dmg, 'chest', { id: 'he', armorPen: 0.5, type: 'grenade', name: '高爆手雷', killReward: 300 }, _g3.subVectors(c, p).normalize(), c, false);
       }
       const dc = this.camera.position.distanceTo(p);
       this.shake = Math.max(this.shake, clamp(1.5 - dc / 14, 0, 1.2));
@@ -583,7 +681,122 @@ class Game {
     } else if (g.id === 'smoke') {
       Effects.smoke(p);
       this.playAt('smokepop', p, { vol: 1.0, ref: 4, net: false });
+      if (!this.client) this.extinguishFiresAt(p, 4.4);
+    } else if (g.id === 'molotov') {
+      g.mesh.visible = false;
+      if (!this.client) this.spawnFire(p, g.owner);
     }
+  }
+  spawnFire(p, owner) {
+    const pos = p.clone();
+    // 落入已展开的烟雾弹内时直接熄灭
+    if (Effects.smokes && Effects.smokes.some((s) => s.r > 1.5 && Math.hypot(s.pos.x - pos.x, s.pos.z - pos.z) < s.r + 0.6 && Math.abs(s.pos.y - pos.y) < 2.5)) {
+      this.playAt('fire_extinguish', pos, { vol: 1.1, ref: 6, roll: 0.9, rev: 0.25, net: false });
+      this.emit({ t: 'ext', p: nv(pos) });
+      return;
+    }
+    this.playAt('moly_break', pos, { vol: 1.25, ref: 7, roll: 0.9, rev: 0.4, net: false });
+    if (Effects.fire) Effects.fire(pos, 7.5, 3.3);
+    this.fires.push({ pos, r: 3.3, t: 0, life: 7.5, tickT: 0, crackleT: 0.4, owner });
+    this.emit({ t: 'fire', p: nv(pos) });
+    this.noise(owner || this.player, pos, 32);
+  }
+  extinguishFiresAt(p, radius = 4.4) {
+    let ext = 0;
+    for (let i = this.fires.length - 1; i >= 0; i--) {
+      const f = this.fires[i];
+      if (f.pos.distanceTo(p) <= radius) {
+        this.fires.splice(i, 1);
+        ext++;
+      }
+    }
+    const fxExt = Effects.extinguishFiresNear ? Effects.extinguishFiresNear(p, radius) : 0;
+    if (ext > 0 || fxExt > 0) {
+      this.playAt('fire_extinguish', p, { vol: 1.15, ref: 6, roll: 0.9, rev: 0.25, net: false });
+      this.emit({ t: 'ext', p: nv(p) });
+    }
+    return ext + fxExt;
+  }
+  updateFires(dt) {
+    const fireDef = { id: 'molotov', armorPen: 0.72, type: 'grenade', name: '燃烧弹', killReward: 300 };
+    for (let i = this.fires.length - 1; i >= 0; i--) {
+      const f = this.fires[i];
+      f.t += dt;
+      if (f.t >= f.life) { this.fires.splice(i, 1); continue; }
+      f.crackleT -= dt;
+      if (f.crackleT <= 0) {
+        f.crackleT = rand(0.55, 0.95);
+        this.playAt('fire_crackle', f.pos, { vol: 0.52, ref: 4, maxDist: 22, rev: 0.2 });
+      }
+      f.tickT += dt;
+      if (f.tickT >= 0.25) {
+        f.tickT -= 0.25;
+        const dmg = lerp(32, 56, clamp(f.t / 3, 0, 1)) * 0.25;
+        for (const a of this.actors) {
+          if (!a.alive) continue;
+          const dx = a.pos.x - f.pos.x, dz = a.pos.z - f.pos.z;
+          if (dx * dx + dz * dz > f.r * f.r) continue;
+          if (Math.abs(a.pos.y - f.pos.y) >= 1.8) continue;
+          const dir = _g3.set(dx, 0.5, dz).normalize();
+          this.applyDamage(a, f.owner, a === f.owner ? dmg * 0.75 : dmg, 'chest', fireDef, dir, a.pos, false);
+        }
+      }
+    }
+  }
+  requestPing() {
+    const P = this.player;
+    if (!P.alive) return;
+    if (this.client) {
+      if (this.time - (P._lastPingT || -9) < 0.6) return;
+      P._lastPingT = this.time;
+      const eye = P.eyePos(_g1), dir = P.forward(_g2);
+      this.net.send({ t: 'ping', o: nv(eye), d: nv(dir) });
+      return;
+    }
+    this.placePing(P);
+  }
+  placePing(a, eyeOpt, dirOpt) {
+    if (!a || !a.alive) return null;
+    if (this.time - (a._lastPingT || -9) < 0.6) return null;
+    a._lastPingT = this.time;
+    const eye = eyeOpt ? eyeOpt.clone() : a.eyePos(new THREE.Vector3());
+    const dir = dirOpt ? dirOpt.clone().normalize() : a.forward(new THREE.Vector3());
+    const maxD = 120;
+    const wh = this.world.raycast(eye.x, eye.y, eye.z, dir.x, dir.y, dir.z, maxD, {});
+    const lim = wh ? wh.t : maxD;
+    const ah = this.rayActors(eye.x, eye.y, eye.z, dir, lim, new Set([a]));
+    let hitPt, danger = false;
+    if (ah && ah.actor && ah.actor.team !== a.team && !Effects.smokeBlocks(eye, _g1.copy(eye).addScaledVector(dir, ah.t))) {
+      danger = true;
+      hitPt = eye.clone().addScaledVector(dir, ah.t);
+    } else if (wh) {
+      hitPt = eye.clone().addScaledVector(dir, wh.t);
+    } else {
+      hitPt = eye.clone().addScaledVector(dir, 60);
+    }
+    const area = (typeof HUD !== 'undefined' && HUD.areaName) ? HUD.areaName(this, hitPt) : '中路';
+    const label = danger ? ('发现敌人 · ' + area) : area;
+    const ping = this.addPing({ pos: hitPt, team: a.team, label, danger, by: a.name });
+    for (const o of this.actors) {
+      if (o.alive && o.team === a.team && o.brain && o.brain.onPing) o.brain.onPing(hitPt, danger);
+    }
+    if (this.net && this.net.host) {
+      this.emit({ t: 'ping', p: nv(hitPt), tm: a.team === 'T' ? 1 : 0, l: label, dg: danger ? 1 : 0, by: a.name });
+    }
+    return ping;
+  }
+  addPing({ pos, team, label, danger, by }) {
+    let ownCount = 0;
+    for (let i = 0; i < this.pings.length; i++) if (this.pings[i].by === by) ownCount++;
+    if (ownCount >= 2) {
+      const idx = this.pings.findIndex((x) => x.by === by);
+      if (idx >= 0) this.pings.splice(idx, 1);
+    }
+    const p = { pos: pos.clone(), team, label, danger: !!danger, by, t: 0, ttl: 5.5 };
+    this.pings.push(p);
+    const viewTeam = (this.viewTarget || this.player).team;
+    if (team === viewTeam) Sound.play(danger ? 'ping_danger' : 'ping', { vol: danger ? 0.65 : 0.52 });
+    return p;
   }
 
   // ---------------- 购买 ----------------
@@ -594,7 +807,13 @@ class Game {
     if (it.team && it.team !== a.team && !(md.id === 'range' && WEAPONS[id])) ok = false;
     if (WEAPONS[id]) {
       const def = WEAPONS[id];
-      if (def.type === 'grenade') { own = a.inv.nades[id] > 0; if (a.inv.nades[id] >= def.max) ok = false; const tot = a.inv.nades.he + a.inv.nades.flash + a.inv.nades.smoke; if (tot >= 4) ok = false; }
+      if (def.type === 'grenade') {
+        const curN = a.inv.nades[id] || 0;
+        own = curN > 0;
+        if (curN >= def.max) ok = false;
+        const tot = (a.inv.nades.he || 0) + (a.inv.nades.flash || 0) + (a.inv.nades.smoke || 0) + (a.inv.nades.molotov || 0);
+        if (tot >= 4) ok = false;
+      }
       else { const cur = def.slot === 1 ? a.inv.primary : a.inv.secondary; own = !!cur && cur.id === id; if (own) ok = false; }
     } else if (id === 'kevlar') { own = a.armor >= 100; if (own) ok = false; }
     else if (id === 'helmet') { own = a.armor >= 100 && a.helmet; if (own) ok = false; if (a.armor >= 100 && !a.helmet && !md.infiniteMoney) ok = a.money >= 350; }
@@ -636,12 +855,12 @@ class Game {
     if (!(md.canBuy && md.canBuy(a))) return false;
     let bought = false;
     if (!a.helmet || a.armor < 100) bought = this.buy(a, 'helmet', ui) || bought;
-    const prims = a.team === 'T' ? ['ak47', 'galil', 'p90', 'nova', 'mp9'] : ['m4a4', 'm4a1s', 'p90', 'nova', 'mp9'];
+    const prims = a.team === 'T' ? ['ak47', 'galil', 'p90', 'nova', 'mp9'] : ['m4a4', 'm4a1s', 'famas', 'p90', 'nova', 'mp9'];
     if (!a.inv.primary || !prims.includes(a.inv.primary.id)) {
-      for (const pid of prims) if (this.buy(a, pid, ui)) { bought = true; break; }
+      for (const pid of prims) if (WEAPONS[pid] && this.buy(a, pid, ui)) { bought = true; break; }
     }
     if (a.team === 'CT' && !a.inv.defuser) bought = this.buy(a, 'defuser', ui) || bought;
-    for (const nd of ['he', 'flash', 'smoke']) if (a.inv.nades[nd] === 0 && (md.infiniteMoney || a.money >= WEAPONS[nd].price)) {
+    for (const nd of ['he', 'flash', 'smoke', 'molotov']) if (WEAPONS[nd] && (a.inv.nades[nd] || 0) === 0 && (md.infiniteMoney || a.money >= WEAPONS[nd].price)) {
       if (this.buy(a, nd, ui)) bought = true;
     }
     if (!bought && ui) Sound.play('ui_deny');
@@ -663,13 +882,16 @@ class Game {
   }
   botBuy(a) {
     const m = () => a.money;
-    const rifle = a.team === 'T' ? (Math.random() < 0.72 ? 'ak47' : 'galil') : (Math.random() < 0.55 ? 'm4a4' : 'm4a1s');
+    const rifle = a.team === 'T'
+      ? (Math.random() < 0.72 ? 'ak47' : 'galil')
+      : (Math.random() < 0.42 ? 'm4a4' : (Math.random() < 0.78 || !WEAPONS.famas ? 'm4a1s' : 'famas'));
     const eco = Math.random() < 0.4 ? 'nova' : Math.random() < 0.7 ? 'mp9' : 'p90';
     if (!a.inv.primary) {
       if (m() >= 4750 + 1000 && Math.random() < 0.2) this.buy(a, 'awp');
       else if (m() >= 2700 + 650 && Math.random() < 0.16) this.buy(a, 'ssg08');
-      else if (m() >= WEAPONS[rifle].price + 650) this.buy(a, rifle);
+      else if (WEAPONS[rifle] && m() >= WEAPONS[rifle].price + 650) this.buy(a, rifle);
       else if (a.team === 'T' && m() >= 1800 + 650) this.buy(a, 'galil');
+      else if (a.team === 'CT' && WEAPONS.famas && m() >= WEAPONS.famas.price + 650) this.buy(a, 'famas');
       else if (m() >= WEAPONS[eco].price + 650 && Math.random() < 0.65) this.buy(a, eco);
       else if (m() >= 1050 && Math.random() < 0.35) this.buy(a, 'nova');
       else if (m() >= 700 && Math.random() < 0.4 && !(a.inv.secondary && a.inv.secondary.id === 'deagle')) this.buy(a, 'deagle');
@@ -677,7 +899,8 @@ class Game {
     }
     if (m() >= 1000 && !a.helmet) this.buy(a, 'helmet'); else if (m() >= 650 && a.armor < 100) this.buy(a, 'kevlar');
     if (a.team === 'CT' && m() >= 400 && Math.random() < 0.6) this.buy(a, 'defuser');
-    const nades = shuffle(['he', 'flash', 'smoke', 'flash']);
+    const nadePool = WEAPONS.molotov ? ['he', 'flash', 'smoke', 'molotov', 'flash'] : ['he', 'flash', 'smoke', 'flash'];
+    const nades = shuffle(nadePool);
     for (const n of nades) if (m() >= 900 && Math.random() < 0.5) this.buy(a, n);
   }
 
@@ -689,9 +912,21 @@ class Game {
     if (I.wasPressed('KeyB') && !this.over) { if (ui) HUD.closeBuy(); else if (this.mode.canBuy && this.mode.canBuy(P)) HUD.openBuy(this); }
     if (I.wasPressed('F1') && this.mode.canBuy && this.mode.canBuy(P)) this.quickBuy(P, true);
     if (I.wasPressed('F2') && this.mode.canBuy && this.mode.canBuy(P)) this.rebuyLast(P, true);
+    if (this.mode.id === 'range' && !ui) {
+      if (I.wasPressed('KeyT') && this.mode.startChallenge) this.mode.startChallenge();
+      if (I.wasPressed('KeyJ') && this.mode.toggleStatic) this.mode.toggleStatic();
+      if (I.wasPressed('KeyK') && this.mode.toggleImpacts) this.mode.toggleImpacts();
+      if (I.wasPressed('KeyL') && this.mode.clearAllRange) this.mode.clearAllRange();
+    }
     if (!P.alive) {
-      if (I.mPressed[0] || I.wasPressed('Space')) this.nextSpectate(1);
+      if (I.mPressed[0]) this.nextSpectate(1);
       if (I.mPressed[2]) this.nextSpectate(-1);
+      if (I.wasPressed('KeyV') || I.wasPressed('Space')) {
+        this.specFirstPerson = !this.specFirstPerson;
+        Settings.data.specFirstPerson = this.specFirstPerson;
+        Settings.save();
+        Sound.play('ui_click', { vol: 0.4 });
+      }
       return;
     }
     const k = (code) => I.isDown(code);
@@ -710,11 +945,12 @@ class Game {
     if (ui) {
       c.attack = false; c.attack2 = false;
       if (I.mPressed[0]) HUD.buyClick(this);
-      for (let n = 1; n <= 6; n++) if (I.wasPressed('Digit' + n)) HUD.buyKey(this, n);
+      for (let n = 1; n <= 9; n++) if (I.wasPressed('Digit' + n)) HUD.buyKey(this, n);
       if (I.wasPressed('Escape')) HUD.closeBuy();
     } else {
       c.attack = I.mouse[0]; c.attackPressed = I.mPressed[0];
       c.attack2 = I.mouse[2]; c.attack2Pressed = I.mPressed[2];
+      if (I.wasPressed('KeyZ') || I.mPressed[1]) this.requestPing();
       const slots = { Digit1: 'primary', Digit2: 'secondary', Digit3: 'knife', Digit4: 'nade', Digit5: 'c4', KeyQ: 'last' };
       for (const key in slots) if (I.wasPressed(key)) c.slotReq = slots[key];
       if (I.wheel) {
@@ -757,7 +993,11 @@ class Game {
     for (const a of this.actors) {
       if (a.remote) a.netSim(dt); else a.simulate(dt);
       a.updateWeapon(dt);
-      if (!a.isPlayer && !a.remote) a.events.length = 0;   // 机器人没有第一人称动画，事件直接丢掉
+      if (!a.isPlayer && !a.remote) {
+        if (this.spectating && this.specFirstPerson && this.viewTarget === a) {
+          if (a.events.length > 16) a.events.splice(0, a.events.length - 16);
+        } else a.events.length = 0;   // 机器人没有第一人称动画，非第一人称观战目标直接丢掉事件
+      }
     }
     // 角色之间的软碰撞（远端玩家的位置以对方本机为准，这里不推它）
     const al = this.actors;
@@ -773,6 +1013,7 @@ class Game {
       }
     }
     this.updateGrenades(dt);
+    this.updateFires(dt);
     this.updateDrops(dt);
     this.mode.tick(dt);
     if (this.net) this.net.postTick();
@@ -807,8 +1048,10 @@ class Game {
   // ---------------- 回合清场 / C4（房主与加入者共用） ----------------
   clearRoundFx() {
     Effects.clearRound();
-    for (const d of this.drops) this.scene.remove(d.mesh); this.drops.length = 0;
-    for (const gr of this.grenades) this.scene.remove(gr.mesh); this.grenades.length = 0;
+    for (const d of this.drops) { this.scene.remove(d.mesh); disposeObj(d.mesh); } this.drops.length = 0;
+    for (const gr of this.grenades) { this.scene.remove(gr.mesh); disposeObj(gr.mesh); } this.grenades.length = 0;
+    this.fires.length = 0;
+    this.pings.length = 0;
     for (const r of this.ragdolls) r.dispose(); this.ragdolls.length = 0;
     if (this.mode.clearBomb) this.mode.clearBomb(); else if (this.mode.clearMesh) this.mode.clearMesh();
     this.timers.length = 0;
@@ -874,12 +1117,22 @@ class Game {
         }
       }
     }
+    for (let i = this.pings.length - 1; i >= 0; i--) {
+      this.pings[i].t += dt;
+      if (this.pings[i].t >= this.pings[i].ttl) this.pings.splice(i, 1);
+    }
     this.updateCamera(dt);
     Effects.update(dt, cam);
-    const view = P.alive ? P : null;
+    const spec1P = !P.alive && this.spectating && this.specFirstPerson && this.viewTarget && this.viewTarget.alive;
+    const view = P.alive ? P : (spec1P ? this.viewTarget : null);
     const sunVis = this.sunVisibility(cam.position);
-    if (view) this.vm.update(dt, P, cam.quaternion, mx, my, sunVis);
-    else { this.vm.root.visible = false; P.events.length = 0; }
+    if (view) {
+      this.vm.update(dt, view, cam.quaternion, view === P ? mx : 0, view === P ? my : 0, sunVis);
+      if (view !== P) P.events.length = 0;
+    } else {
+      this.vm.root.visible = false;
+      P.events.length = 0;
+    }
     // 后处理参数
     if (this.flashHold > 0) this.flashHold -= dt; else this.flashAmt = Math.max(0, this.flashAmt - dt * 0.55);
     this.dmgFlash = Math.max(0, this.dmgFlash - dt * 1.6);
@@ -892,7 +1145,9 @@ class Game {
     HUD.scoreboard(Input.isDown('Tab') || this.over, this);
     if (!P.alive) {
       const t = this.viewTarget && this.viewTarget.alive ? this.viewTarget : null;
-      HUD.spectate(this.deathT > 2.5 ? (t ? `观战：${t.name}  ·  左/右键切换` : this.mode.id === 'comp' ? '等待下一回合…' : '等待复活…') : '');
+      const pov = this.specFirstPerson ? '第一人称' : '第三人称';
+      const waitMsg = (this.mode.id === 'comp' || this.mode.id === 'retake') ? '等待下一回合…' : '等待复活…';
+      HUD.spectate(this.deathT > 2.5 ? (t ? `观战：${t.name} [${pov}]  ·  V / 空格切换视角 · 左/右键切队友` : waitMsg) : '');
     } else HUD.spectate('');
   }
 
@@ -941,16 +1196,27 @@ class Game {
         this.spectating = true;
         if (!this.viewTarget || !this.viewTarget.alive) this.nextSpectate(1);
         const T = this.viewTarget;
-        if (T) {
-          const eye = _g1.set(T.renderPos.x, T.renderPos.y + T.eyeHeight(), T.renderPos.z);
-          const f = dirFromAngles(T.yaw, T.pitch * 0.6, _g2);
-          const r = _g3.set(Math.cos(T.yaw), 0, -Math.sin(T.yaw));
-          const want = _g4.copy(eye).addScaledVector(f, -2.4).addScaledVector(r, 0.35).add(_v1.set(0, 0.45, 0));
-          const dx = want.x - eye.x, dy = want.y - eye.y, dz = want.z - eye.z, L = Math.hypot(dx, dy, dz);
-          const h = this.world.raycast(eye.x, eye.y, eye.z, dx / L, dy / L, dz / L, L, {});
-          if (h) want.set(eye.x + dx / L * Math.max(0.3, h.t - 0.2), eye.y + dy / L * Math.max(0.3, h.t - 0.2), eye.z + dz / L * Math.max(0.3, h.t - 0.2));
-          cam.position.lerp(want, 1 - Math.exp(-dt * 12));
-          cam.lookAt(_v1.copy(eye).addScaledVector(f, 6));
+        if (T && T.alive) {
+          if (this.specFirstPerson) {
+            cam.position.set(T.renderPos.x, T.renderPos.y + T.eyeHeight() + (T.stepOffset || 0), T.renderPos.z);
+            const vf = 0.45;
+            const pitch = T.pitch + ((T.recoilP || 0) * vf + (T.punchP || 0)) * DEG;
+            const yaw = T.yaw - ((T.recoilY || 0) * vf + (T.punchY || 0)) * DEG;
+            cam.rotation.set(clamp(pitch, -1.55, 1.55), yaw, 0, 'YXZ');
+            if (T.scoped && T.def && T.def.zoom) fov = hToV(T.def.zoom[T.scoped - 1]);
+            if (T.model && !T.model.ragdoll) T.model.root.visible = false;
+          } else {
+            if (T.model && !T.model.ragdoll) T.model.root.visible = true;
+            const eye = _g1.set(T.renderPos.x, T.renderPos.y + T.eyeHeight(), T.renderPos.z);
+            const f = dirFromAngles(T.yaw, T.pitch * 0.6, _g2);
+            const r = _g3.set(Math.cos(T.yaw), 0, -Math.sin(T.yaw));
+            const want = _g4.copy(eye).addScaledVector(f, -2.4).addScaledVector(r, 0.35).add(_v1.set(0, 0.45, 0));
+            const dx = want.x - eye.x, dy = want.y - eye.y, dz = want.z - eye.z, L = Math.hypot(dx, dy, dz);
+            const h = this.world.raycast(eye.x, eye.y, eye.z, dx / L, dy / L, dz / L, L, {});
+            if (h) want.set(eye.x + dx / L * Math.max(0.3, h.t - 0.2), eye.y + dy / L * Math.max(0.3, h.t - 0.2), eye.z + dz / L * Math.max(0.3, h.t - 0.2));
+            cam.position.lerp(want, 1 - Math.exp(-dt * 12));
+            cam.lookAt(_v1.copy(eye).addScaledVector(f, 6));
+          }
         }
       }
     }
@@ -965,13 +1231,15 @@ class Game {
   archiveMatch() {
     if (this._archived || this.client) return;
     const md = this.mode;
-    if (!md || (md.id !== 'comp' && md.id !== 'tdm')) return;
+    const modeMap = { comp: 'elimination', tdm: 'deathmatch', armsrace: 'armsrace', retake: 'retake' };
+    if (!md || !modeMap[md.id]) return;
     this._archived = true;
 
     const scoreRed = Math.min(100, Math.max(0, Math.round((md.score && md.score.T) || 0)));
     const scoreBlue = Math.min(100, Math.max(0, Math.round((md.score && md.score.CT) || 0)));
     const winnerTeam = scoreRed === scoreBlue ? 'draw' : scoreRed > scoreBlue ? 'red' : 'blue';
-    const mode = md.id === 'comp' ? 'elimination' : 'deathmatch';
+    const mode = modeMap[md.id];
+    const mapId = (this.map && this.map.id) || (this.opts && this.opts.map) || 'dust';
 
     const players = this.actors.slice(0, 18).map((a, idx) => {
       const kills = Math.min(200, Math.max(0, Math.round(a.kills || 0)));
@@ -1013,6 +1281,7 @@ class Game {
         source: this.net ? 'online' : 'solo',
         ...(this.net && archiveToken ? { archiveToken } : {}),
         mode,
+        mapId,
         winnerTeam,
         scoreRed,
         scoreBlue,
@@ -1030,9 +1299,20 @@ class Game {
 
   dispose() {
     for (const r of this.ragdolls) r.dispose();
-    for (const a of this.actors) { if (a.model) { if (a.model.ragdoll) a.model.ragdoll.dispose(); this.scene.remove(a.model.root); } }
-    for (const d of this.drops) this.scene.remove(d.mesh);
-    for (const g of this.grenades) this.scene.remove(g.mesh);
+    this.ragdolls.length = 0;
+    for (const a of this.actors) {
+      if (a.model) {
+        if (a.model.ragdoll) a.model.ragdoll.dispose();
+        this.scene.remove(a.model.root);
+        disposeObj(a.model.root);
+      }
+    }
+    for (const d of this.drops) { this.scene.remove(d.mesh); disposeObj(d.mesh); }
+    this.drops.length = 0;
+    for (const g of this.grenades) { this.scene.remove(g.mesh); disposeObj(g.mesh); }
+    this.grenades.length = 0;
+    this.fires.length = 0;
+    this.pings.length = 0;
     if (this.mode.dispose) this.mode.dispose();
     if (this.net) this.net.detach();
     Effects.clearAll();
@@ -1060,9 +1340,12 @@ class ModeTDM {
     a.inv.secondary = new WeaponInst(a.team === 'T' ? 'glock' : 'usp');
     if (a.isBot) {
       const r = Math.random();
-      const primPool = a.team === 'T' ? ['ak47', 'galil', 'p90', 'nova', 'ssg08', 'awp', 'mp9'] : ['m4a4', 'm4a1s', 'p90', 'nova', 'ssg08', 'awp', 'mp9'];
+      const primPool = a.team === 'T'
+        ? ['ak47', 'galil', 'p90', 'nova', 'ssg08', 'awp', 'mp9']
+        : ['m4a4', 'm4a1s', WEAPONS.famas ? 'famas' : 'm4a4', 'p90', 'nova', 'ssg08', 'awp', 'mp9'];
       a.inv.primary = new WeaponInst(r < 0.12 ? 'awp' : r < 0.24 ? 'ssg08' : pick(primPool));
       a.inv.nades.he = Math.random() < 0.4 ? 1 : 0;
+      if (WEAPONS.molotov) a.inv.nades.molotov = Math.random() < 0.22 ? 1 : 0;
     } else a.inv.primary = new WeaponInst(a.team === 'T' ? 'ak47' : 'm4a4');
     a.armor = 100; a.helmet = true;
   }
@@ -1105,7 +1388,7 @@ class ModeTDM {
   onKill(v, k) {
     if (k && k !== v && k.team !== v.team) this.score[k.team]++;
     v.respawnAt = this.g.time + 3;
-    if (v.isPlayer) HUD.showDeath(document.getElementById('deathinfo').innerHTML.split('<small>')[0], '3 秒后复活');
+    if (v.isPlayer) this.g.showDeathHeader('3 秒后复活');
   }
   finish() {
     const g = this.g;
@@ -1118,10 +1401,19 @@ class ModeTDM {
 }
 
 // ======================================================================
-//  模式：靶场
+//  模式：靶场 2.0（弹道分析 + 3D 弹着标记 + 30s 极速反应挑战）
 // ======================================================================
 class ModeRange {
-  constructor(g) { this.g = g; this.id = 'range'; this.title = '靶场训练'; this.infiniteMoney = true; this.score = { CT: 0, T: 0 }; this.phase = 'live'; this.spectateAllowed = false; g.infiniteAmmo = true; }
+  constructor(g) {
+    this.g = g; this.id = 'range'; this.title = '靶场训练'; this.infiniteMoney = true;
+    this.score = { CT: 0, T: 0 }; this.phase = 'live'; this.spectateAllowed = false; g.infiniteAmmo = true;
+    this.sprayHits = []; this.sprayAcc = 100; this.sprayLastShotT = -1;
+    this.staticDummies = false; this.showImpacts = true;
+    this.challenge = {
+      active: false, dur: 30, timeLeft: 30, kills: 0, shots: 0, hits: 0, headshots: 0,
+      targetSpawnT: 0, reactSum: 0, reactCount: 0, lastResult: null, lastSpotIdx: -1, activeTarget: null, _lastSec: 30,
+    };
+  }
   setup() {
     const g = this.g, P = g.player;
     const enemy = P.team === 'CT' ? 'T' : 'CT';
@@ -1130,28 +1422,299 @@ class ModeRange {
     this.anchorPos = new THREE.Vector3(...anchor.pos);
     this.anchorYaw = anchor.yaw || 0;
     this.spots = rawSpots.map((p) => new THREE.Vector3(...p));
-    this.spots.forEach((p, i) => { const b = g.createActor(enemy, true, '靶子 ' + (i + 1)); b.brain.passive = true; b.home = p; });
+    this.spots.forEach((p, i) => { const b = g.createActor(enemy, true, '靶子 ' + (i + 1)); b.brain.passive = true; b.brain.staticDummy = this.staticDummies; b.home = p.clone(); b.baseHome = p.clone(); });
     P.stripForNewGame();
     P.inv.secondary = new WeaponInst('deagle'); P.inv.primary = new WeaponInst(P.team === 'T' ? 'ak47' : 'm4a4');
-    P.inv.nades = { he: 1, flash: 2, smoke: 1 }; P.armor = 100; P.helmet = true;
+    P.inv.nades = { he: 1, flash: 2, smoke: 1, molotov: WEAPONS.molotov ? 1 : 0 }; P.armor = 100; P.helmet = true;
     P.spawnAt(this.anchorPos.clone(), this.anchorYaw); P.spawnTime = 0;
     for (const a of g.actors) if (a !== P) this.spawnDummy(a);
-    HUD.center('靶场训练 · ' + ((g.map && g.map.name) || ''), '', 4, '无限弹药 · 随处按 B 换枪 · 右侧显示实时散布/速度');
+    HUD.center('靶场训练 2.0 · ' + ((g.map && g.map.name) || ''), '', 4, '无限弹药 · B 换枪 · T 30s 反应挑战 · J 动/静靶 · K 弹着标记 · L 清屏');
   }
   spawnDummy(a) {
-    a.inv.primary = null; a.inv.secondary = new WeaponInst('glock'); a.armor = Math.random() < 0.5 ? 100 : 0; a.helmet = a.armor > 0 && Math.random() < 0.5;
-    a.spawnAt(a.home, Math.PI); a.brain.task = { type: 'dummy', pos: a.home };
+    a.inv.primary = null; a.inv.secondary = new WeaponInst('glock');
+    a.armor = this.challenge.active ? 0 : (Math.random() < 0.5 ? 100 : 0);
+    a.helmet = a.armor > 0 && Math.random() < 0.5;
+    a.spawnAt(a.home, Math.PI);
+    a.brain.task = { type: 'dummy', pos: a.home };
+    a.brain.staticDummy = this.staticDummies;
   }
-  canBuy(a) { return a.alive; }
-  timeLeft() { return null; }
-  tick(dt) {
-    const g = this.g;
-    for (const a of g.actors) {
-      if (a.isPlayer) { if (!a.alive && a.respawnAt && g.time > a.respawnAt) { a.respawnAt = 0; a.spawnAt(this.anchorPos.clone(), this.anchorYaw); HUD.hideDeath(); } continue; }
-      if (!a.alive && a.respawnAt && g.time > a.respawnAt) { a.respawnAt = 0; this.spawnDummy(a); }
+  recordShot(dxDeg, dyDeg, hit, hs, shotT, recoilIdx) {
+    // 每次新连射（首枪 recoilIdx 在 fire() 中先 +1 故此时 <= 1.15）重置弹道记录
+    if (this.sprayLastShotT !== shotT && recoilIdx <= 1.15) this.sprayHits.length = 0;
+    this.sprayLastShotT = shotT;
+    this.sprayHits.push({ dx: dxDeg, dy: dyDeg, x: dxDeg, y: dyDeg, hit: !!hit, hs: !!hs });
+    if (this.sprayHits.length > 30) this.sprayHits.shift();
+    let sumD = 0;
+    for (const s of this.sprayHits) sumD += Math.hypot(s.dx, s.dy);
+    const avgD = this.sprayHits.length ? sumD / this.sprayHits.length : 0;
+    this.sprayAcc = Math.round(clamp(100 - avgD * 14, 0, 100));
+    if (this.challenge.active) {
+      this.challenge.shots++;
+      if (hit) this.challenge.hits++;
     }
   }
-  onKill(v, k) { v.respawnAt = this.g.time + (v.isPlayer ? 2 : 1.6); if (k && k.isPlayer) this.score[k.team]++; }
+  startChallenge() {
+    const ch = this.challenge;
+    ch.active = true; ch.timeLeft = ch.dur; ch.kills = 0; ch.shots = 0; ch.hits = 0; ch.headshots = 0;
+    ch.reactSum = 0; ch.reactCount = 0; ch.lastSpotIdx = -1; ch._lastSec = Math.ceil(ch.dur);
+    this.sprayHits.length = 0; this.sprayAcc = 100;
+    this.spawnChallengeTarget();
+    Sound.play('challenge_tick', { vol: 0.55 });
+    HUD.center('30s 极速反应挑战开始！', 'win-ct', 1.8, '击杀目标立即刷新下一个 · 再次按 T 重开');
+  }
+  spawnChallengeTarget() {
+    const g = this.g, ch = this.challenge;
+    const dummies = g.actors.filter((a) => !a.isPlayer);
+    if (!dummies.length || !this.spots.length) return;
+    for (const d of dummies) {
+      d.alive = false; d.respawnAt = 0;
+      if (d.model && !d.model.ragdoll) d.model.root.visible = false;
+    }
+    let si = Math.floor(Math.random() * this.spots.length);
+    if (this.spots.length > 1 && si === ch.lastSpotIdx) si = (si + 1 + Math.floor(Math.random() * (this.spots.length - 1))) % this.spots.length;
+    ch.lastSpotIdx = si;
+    const base = this.spots[si];
+    let p = base.clone();
+    for (let k = 0; k < 5; k++) {
+      const cand = new THREE.Vector3(base.x + rand(-1.4, 1.4), base.y, base.z + rand(-1.2, 1.2));
+      const h = g.nav.heightAt(cand.x, cand.z);
+      if (!isNaN(h) && Math.abs(h - base.y) < 0.6 && !g.world.overlapHull(cand.x, h, cand.z, PHYS.hullHalf, PHYS.standH)) {
+        cand.y = h; p = cand; break;
+      }
+    }
+    const target = dummies[ch.kills % dummies.length];
+    target.home = p;
+    this.spawnDummy(target);
+    ch.activeTarget = target;
+    ch.targetSpawnT = g.time;
+  }
+  finishChallenge() {
+    const g = this.g, ch = this.challenge;
+    ch.active = false; ch.timeLeft = 0; ch.activeTarget = null;
+    const hsRate = ch.kills > 0 ? Math.round((ch.headshots / ch.kills) * 100) : 0;
+    const avgMs = ch.reactCount > 0 ? Math.round((ch.reactSum / ch.reactCount) * 1000) : 0;
+    const acc = ch.shots > 0 ? Math.round((ch.hits / ch.shots) * 100) : 0;
+    ch.lastResult = { kills: ch.kills, hsRate, avgMs, acc };
+    const pb = Settings.data.rangeBest || { kills: 0, hsRate: 0, avgMs: 0 };
+    const isNewBest = ch.kills > (pb.kills || 0) || (ch.kills === (pb.kills || 0) && ch.kills > 0 && avgMs > 0 && (!pb.avgMs || avgMs < pb.avgMs));
+    if (isNewBest) {
+      Settings.data.rangeBest = { kills: ch.kills, hsRate, avgMs };
+      Settings.save();
+    }
+    Sound.play('challenge_done', { vol: 0.65 });
+    HUD.center(isNewBest ? '新纪录！30s 反应挑战完成' : '30s 反应挑战完成', 'win-ct', 4, `击杀 ${ch.kills} · 爆头率 ${hsRate}% · 平均反应 ${avgMs || '--'}ms`);
+    for (const a of g.actors) {
+      if (!a.isPlayer) {
+        if (a.baseHome) a.home = a.baseHome.clone();
+        this.spawnDummy(a);
+      }
+    }
+  }
+  toggleStatic() {
+    this.staticDummies = !this.staticDummies;
+    for (const a of this.g.actors) if (a.brain) a.brain.staticDummy = this.staticDummies;
+    Sound.play('ui_click', { vol: 0.45 });
+  }
+  toggleImpacts() {
+    this.showImpacts = !this.showImpacts;
+    if (!this.showImpacts && Effects.clearImpactMarkers) Effects.clearImpactMarkers();
+    Sound.play('ui_click', { vol: 0.45 });
+  }
+  clearAllRange() {
+    this.sprayHits.length = 0; this.sprayAcc = 100;
+    if (Effects.clearImpactMarkers) Effects.clearImpactMarkers();
+    Effects.clearRound();
+    Sound.play('ui_click', { vol: 0.45 });
+  }
+  canBuy(a) { return a.alive; }
+  timeLeft() { return this.challenge.active ? this.challenge.timeLeft : null; }
+  tick(dt) {
+    const g = this.g, ch = this.challenge;
+    if (ch.active) {
+      ch.timeLeft -= dt;
+      const sec = Math.ceil(ch.timeLeft);
+      if (sec <= 5 && sec > 0 && sec !== ch._lastSec) { ch._lastSec = sec; Sound.play('challenge_tick', { vol: 0.5 }); }
+      if (ch.timeLeft <= 0) { this.finishChallenge(); return; }
+    }
+    for (const a of g.actors) {
+      if (a.isPlayer) { if (!a.alive && a.respawnAt && g.time > a.respawnAt) { a.respawnAt = 0; a.spawnAt(this.anchorPos.clone(), this.anchorYaw); HUD.hideDeath(); } continue; }
+      if (!ch.active && !a.alive && a.respawnAt && g.time > a.respawnAt) { a.respawnAt = 0; this.spawnDummy(a); }
+    }
+  }
+  onKill(v, k, hs) {
+    const g = this.g, ch = this.challenge;
+    if (ch.active && !v.isPlayer && k && k.isPlayer) {
+      ch.kills++;
+      if (hs) ch.headshots++;
+      const rt = Math.max(0.05, g.time - (ch.targetSpawnT != null ? ch.targetSpawnT : g.time));
+      ch.reactSum += rt;
+      ch.reactCount++;
+      this.score[k.team]++;
+      v.respawnAt = 0;
+      this.spawnChallengeTarget();
+      return;
+    }
+    v.respawnAt = g.time + (v.isPlayer ? 2 : 1.6);
+    if (k && k.isPlayer) this.score[k.team]++;
+  }
+}
+
+// ======================================================================
+//  模式：军备竞赛（12 阶武器进阶 · 黄金爪子刀一击制胜）
+// ======================================================================
+class ModeArmsRace {
+  constructor(g) {
+    this.g = g; this.id = 'armsrace'; this.title = '军备竞赛';
+    this.ladder = (typeof ARMS_RACE_LADDER !== 'undefined' && Array.isArray(ARMS_RACE_LADDER))
+      ? ARMS_RACE_LADDER
+      : ['mp9', 'p90', 'nova', 'galil', 'famas', 'm4a1s', 'm4a4', 'ak47', 'ssg08', 'awp', 'deagle', 'karambit'];
+    this.killsPerLevel = 2;
+    this.total = 480;
+    this.t = 0;
+    this.phase = 'live';
+    this.infiniteMoney = true;
+    this.spectateAllowed = false;
+    this.score = { CT: 0, T: 0 };
+  }
+  setup() {
+    const g = this.g, n = g.opts.size;
+    for (const team of ['CT', 'T']) {
+      const cnt = Math.max(0, n - g.humans(team));
+      for (let i = 0; i < cnt; i++) g.createActor(team, true, g.botName(team, i));
+    }
+    for (const a of g.actors) {
+      a.arLevel = 0; a.arProgress = 0; a.overrideSkin = null;
+      this.loadout(a);
+      this.spawn(a);
+    }
+    g.center(['军备竞赛', '', 3.5, '每 2 击杀升阶（爆头/刀杀直接升阶）· 终阶黄金爪子刀制胜']);
+    g.sound2d(['round_start', 0.5]);
+  }
+  loadout(a) {
+    a.stripForNewGame();
+    a.armor = 100; a.helmet = true;
+    this.equipTier(a, true);
+  }
+  equipTier(a, silent) {
+    const lvl = clamp(a.arLevel || 0, 0, this.ladder.length - 1);
+    a.arLevel = lvl;
+    const wid = this.ladder[lvl];
+    const def = WEAPONS[wid];
+    a.inv.primary = null;
+    a.inv.secondary = null;
+    a.inv.nades = { he: 0, flash: 0, smoke: 0, molotov: 0 };
+    a.inv.c4 = false;
+    a.overrideSkin = null;
+    if (lvl === this.ladder.length - 1 || (def && def.type === 'knife')) {
+      a.inv.knife = new WeaponInst('karambit');
+      a.overrideSkin = 'gold';
+      a.weapon = null;
+      a.switchTo('knife', !!silent);
+    } else if (def && def.slot === 1) {
+      a.inv.primary = new WeaponInst(wid);
+      a.weapon = null;
+      a.switchTo('primary', !!silent);
+    } else if (def && def.slot === 2) {
+      a.inv.secondary = new WeaponInst(wid);
+      a.weapon = null;
+      a.switchTo('secondary', !!silent);
+    }
+    for (const s of ['primary', 'secondary']) {
+      if (a.inv[s]) { a.inv[s].mag = a.inv[s].def.mag; a.inv[s].reserve = a.inv[s].def.reserve; }
+    }
+  }
+  spawn(a) {
+    const g = this.g;
+    const pts = g.map.spawns[a.team];
+    let best = pts[0], bs = -1;
+    for (let k = 0; k < 8; k++) {
+      const p = pick(pts);
+      let near = 1e9;
+      for (const o of g.actors) if (o.alive && o !== a) near = Math.min(near, o.pos.distanceTo(p));
+      if (near > bs) { bs = near; best = p; }
+    }
+    a.armor = 100; a.helmet = true;
+    a.spawnAt(best, a.team === 'T' ? 0 : Math.PI);
+    a.spawnProtect = 1.8;
+    a.spawnTime = g.time;
+    this.equipTier(a, true);
+    if (a.brain) { a.brain.reset(); a.brain.task = { type: 'roam', pos: g.randomGoal(a) }; }
+    if (a.isPlayer) { HUD.hideDeath(); g.flashAmt = 0; }
+  }
+  canBuy() { return false; }
+  timeLeft() { return Math.max(0, this.total - this.t); }
+  leader() {
+    let best = null;
+    for (const a of this.g.actors) {
+      if (!best || (a.arLevel || 0) > (best.arLevel || 0)
+        || ((a.arLevel || 0) === (best.arLevel || 0) && ((a.arProgress || 0) > (best.arProgress || 0) || a.kills > best.kills))) {
+        best = a;
+      }
+    }
+    return best ? { name: best.name, team: best.team, level: best.arLevel || 0, total: this.ladder.length } : null;
+  }
+  tick(dt) {
+    const g = this.g;
+    if (this.phase !== 'live') return;
+    this.t += dt;
+    for (const a of g.actors) {
+      if (!a.alive && a.respawnAt && g.time >= a.respawnAt) { a.respawnAt = 0; this.spawn(a); }
+      if (a.alive && a.brain && a.brain.task && a.brain.task.type === 'roam') {
+        const t = a.brain.task;
+        t.timer = (t.timer || 0) + dt;
+        if (a.pos.distanceTo(t.pos) < 3 || t.timer > 22) { t.pos = g.randomGoal(a); t.timer = 0; }
+      }
+    }
+    if (this.t >= this.total) this.finish(null);
+  }
+  onKill(v, k, hs, melee) {
+    const g = this.g;
+    v.respawnAt = g.time + 2.0;
+    if (v.isPlayer) g.showDeathHeader('2 秒后复活');
+    if (!k || k === v || k.team === v.team || this.phase !== 'live') return;
+    if (melee) {
+      v.arLevel = Math.max(0, (v.arLevel || 0) - 1);
+      v.arProgress = 0;
+      v.sfx('level_down', 0.5);
+      const demW = WEAPONS[this.ladder[v.arLevel]];
+      g.center((P) => P === v ? ['遭到刀杀 · 降阶！', 'win-t', 2.2, `回退至第 ${v.arLevel + 1} 阶：${demW ? demW.name : ''}`] : null);
+    }
+    const isFinal = (k.arLevel || 0) >= this.ladder.length - 1;
+    const inc = (hs || melee || isFinal) ? this.killsPerLevel : 1;
+    k.arProgress = (k.arProgress || 0) + inc;
+    if (k.arProgress >= this.killsPerLevel) {
+      k.arLevel = (k.arLevel || 0) + 1;
+      k.arProgress = 0;
+      this.score[k.team] = Math.max(this.score[k.team], Math.min(k.arLevel, this.ladder.length));
+      if (k.arLevel >= this.ladder.length) {
+        this.finish(k);
+        return;
+      }
+      this.equipTier(k, false);
+      k.sfx('level_up', 0.6);
+      const nw = WEAPONS[this.ladder[k.arLevel]];
+      const sub = k.arLevel === this.ladder.length - 1 ? '终极黄金爪子刀！一击终结对局！' : `当前武器：${nw ? nw.name : ''}`;
+      g.center((P) => P === k ? [`武器升阶 · ${k.arLevel + 1}/${this.ladder.length}`, 'win-' + k.team.toLowerCase(), 2.2, sub] : null);
+    }
+    this.score[k.team] = Math.max(this.score[k.team], k.arLevel || 0);
+  }
+  finish(winnerActor) {
+    const g = this.g;
+    if (this.phase === 'over') return;
+    this.phase = 'over'; g.over = true; g.frozen = true; g.noFire = true;
+    let win = winnerActor;
+    if (!win) {
+      for (const a of g.actors) {
+        if (!win || (a.arLevel || 0) > (win.arLevel || 0) || ((a.arLevel || 0) === (win.arLevel || 0) && a.kills > win.kills)) win = a;
+      }
+    }
+    const wt = win ? win.team : (this.score.CT >= this.score.T ? 'CT' : 'T');
+    const title = win ? `${win.name} 制霸军备竞赛！` : (wt === 'CT' ? '反恐精英获胜！' : '恐怖分子获胜！');
+    const sub = win ? `${wt === 'CT' ? '反恐精英' : '恐怖分子'} 获胜 · ${win.kills} 击杀` : `${this.score.CT} : ${this.score.T}`;
+    g.center([title, 'win-' + wt.toLowerCase(), 9, sub]);
+    g.sound2d((a) => [wt === a.team ? 'round_win' : 'round_lose', 0.6]);
+    g.archiveMatch();
+  }
 }
 
 // ======================================================================
@@ -1182,7 +1745,7 @@ class ModeComp {
     g.roundPurchases = [];
     const pts = { CT: shuffle(g.map.spawns.CT.slice()), T: shuffle(g.map.spawns.T.slice()) };
     for (const a of g.actors) {
-      if (!a.alive) { a.inv.primary = null; a.inv.secondary = null; a.inv.nades = { he: 0, flash: 0, smoke: 0 }; a.armor = 0; a.helmet = false; a.inv.defuser = false; }
+      if (!a.alive) { a.inv.primary = null; a.inv.secondary = null; a.inv.nades = { he: 0, flash: 0, smoke: 0, molotov: 0 }; a.armor = 0; a.helmet = false; a.inv.defuser = false; }
       a.inv.c4 = false;
       this.defaultPistol(a);
       for (const s of ['primary', 'secondary']) if (a.inv[s]) { const w = a.inv[s]; w.reserve = w.def.reserve; }
@@ -1314,6 +1877,7 @@ class ModeComp {
         if (!t.utilDone && t.pts.length >= 2 && t.i >= t.pts.length - 2 && !a.brain.target && !a.brain.nade) {
           t.utilDone = true;
           if (a.inv.nades.flash && Math.random() < 0.85) a.brain.planNade('flash', st.center.clone().add(_g1.set(rand(-3, 3), 1.5, rand(-3, 3))));
+          else if (a.inv.nades.molotov && Math.random() < 0.65) a.brain.planNade('molotov', st.center.clone().add(_g1.set(rand(-3, 3), 0, rand(-3, 3))));
           else if (a.inv.nades.he && Math.random() < 0.5) a.brain.planNade('he', st.center.clone().add(_g1.set(rand(-4, 4), 0, rand(-4, 4))));
         }
         if (t.i >= t.pts.length - 1 && a.pos.distanceTo(t.pts[t.pts.length - 1]) < 3.5) a.brain.task = t.then || { type: 'hold', pos: a.pos.clone() };
@@ -1377,7 +1941,7 @@ class ModeComp {
     this.endRound('T', 'bomb');
   }
   clearBomb() {
-    if (this.bombMesh) this.g.scene.remove(this.bombMesh);
+    if (this.bombMesh) { this.g.scene.remove(this.bombMesh); disposeObj(this.bombMesh); }
     this.bombMesh = null; this.bombLight = null; this.bomb = null;
   }
   endRound(winner, reason) {
@@ -1413,4 +1977,223 @@ class ModeComp {
   }
   onKill(v, k) { void v; void k; }
   dispose() { this.clearBomb(); }
+}
+
+// ======================================================================
+//  模式：残局回防（已下包 40s 攻防 · 即时配装 · 先赢 7 局）
+// ======================================================================
+class ModeRetake extends ModeComp {
+  constructor(g) {
+    super(g);
+    this.id = 'retake';
+    this.title = '残局回防';
+    this.infiniteMoney = false;
+    this.spectateAllowed = true;
+    this.toWin = 7;
+    this.half = 6;
+    this.freezeTime = 3;
+    this.buyWindow = 0;
+    this.roundTime = 45;
+  }
+  canBuy() { return false; }
+  buyTimeLeft() { return 0; }
+  canPlant() { return false; }
+
+  safeSpot(base, fallback, used) {
+    const g = this.g;
+    const ok = (p) => {
+      if (!p || !isFinite(p.x) || !isFinite(p.y) || !isFinite(p.z)) return false;
+      if (g.world.overlapHull(p.x, p.y, p.z, PHYS.hullHalf, PHYS.standH)) return false;
+      for (const u of used) if (u.distanceTo(p) < 1.25) return false;
+      return true;
+    };
+    const p0 = this.snap(base, fallback);
+    if (ok(p0)) { used.push(p0.clone()); return p0; }
+    const rings = [[1.4, 0], [-1.4, 0], [0, 1.4], [0, -1.4], [1.6, 1.6], [-1.6, 1.6], [1.6, -1.6], [-1.6, -1.6], [2.6, 0], [-2.6, 0], [0, 2.6], [0, -2.6]];
+    for (const [ox, oz] of rings) {
+      const cand = this.snap(new THREE.Vector3(base.x + ox, base.y, base.z + oz), fallback);
+      if (ok(cand)) { used.push(cand.clone()); return cand; }
+    }
+    const fb = this.snap(fallback, fallback);
+    used.push(fb.clone());
+    return fb;
+  }
+
+  giveRetakeLoadout(a, idx, awpFlag) {
+    const hr = ((this.round - 1) % this.half) + 1;
+    a.stripForNewGame();
+    a.inv.nades = { he: 0, flash: 0, smoke: 0, molotov: 0 };
+    a.inv.c4 = false;
+    const nadePool = WEAPONS.molotov ? ['smoke', 'flash', 'he', 'molotov'] : ['smoke', 'flash', 'he'];
+    if (hr === 1) {
+      a.inv.secondary = new WeaponInst(Math.random() < 0.35 ? 'p250' : (a.team === 'T' ? 'glock' : 'usp'));
+      a.armor = 100; a.helmet = false;
+      a.inv.nades[pick(['flash', 'smoke', 'he'])] = 1;
+      a.inv.defuser = a.team === 'CT' && (a.isPlayer || idx % 2 === 0);
+    } else if (hr === 2) {
+      const smgs = a.team === 'T'
+        ? ['galil', 'mp9', 'p90', 'nova']
+        : [WEAPONS.famas ? 'famas' : 'm4a1s', 'mp9', 'p90', 'nova'];
+      a.inv.primary = new WeaponInst(pick(smgs));
+      a.inv.secondary = new WeaponInst(Math.random() < 0.25 ? 'p250' : (a.team === 'T' ? 'glock' : 'usp'));
+      a.armor = 100; a.helmet = true;
+      const picked = shuffle(nadePool.slice()).slice(0, Math.random() < 0.5 ? 2 : 1);
+      for (const nd of picked) a.inv.nades[nd] = 1;
+      a.inv.defuser = a.team === 'CT';
+    } else {
+      const wantAwp = !awpFlag.v && (idx === 1 || (idx === 0 && Math.random() < 0.22));
+      if (wantAwp) {
+        awpFlag.v = true;
+        a.inv.primary = new WeaponInst('awp');
+        a.inv.secondary = new WeaponInst(Math.random() < 0.55 ? 'deagle' : 'p250');
+      } else {
+        const rifles = a.team === 'T'
+          ? ['ak47', 'ak47', 'galil']
+          : ['m4a4', 'm4a1s', WEAPONS.famas ? 'famas' : 'm4a4'];
+        a.inv.primary = new WeaponInst(pick(rifles));
+        a.inv.secondary = new WeaponInst(Math.random() < 0.25 ? 'deagle' : Math.random() < 0.4 ? 'p250' : (a.team === 'T' ? 'glock' : 'usp'));
+      }
+      a.armor = 100; a.helmet = true;
+      const picked = shuffle(nadePool.slice()).slice(0, 2);
+      for (const nd of picked) a.inv.nades[nd] = 1;
+      a.inv.defuser = a.team === 'CT';
+    }
+    for (const s of ['primary', 'secondary']) {
+      if (a.inv[s]) { a.inv[s].mag = a.inv[s].def.mag; a.inv[s].reserve = a.inv[s].def.reserve; }
+    }
+  }
+
+  startRound() {
+    const g = this.g, map = g.map;
+    this.round++;
+    if (this.round === this.half + 1) this.halftime();
+    g.clearRoundFx();
+    g.roundPurchases = [];
+
+    const site = Math.random() < 0.5 ? 'A' : 'B';
+    this.tSite = site;
+    const s = map.sites[site];
+    const pts = map.points || {};
+
+    // 选择包点内干净的 C4 安放位
+    let plantPos = this.snap(s.center, s.center);
+    if (g.world.overlapHull(plantPos.x, plantPos.y, plantPos.z, 0.35, 1.0)) {
+      for (const [ox, oz] of [[1.6, 0], [-1.6, 0], [0, 1.6], [0, -1.6], [2.2, 2.2], [-2.2, -2.2]]) {
+        const cand = this.snap(new THREE.Vector3(s.center.x + ox, s.center.y, s.center.z + oz), s.center);
+        if (!g.world.overlapHull(cand.x, cand.y, cand.z, 0.35, 1.0)) { plantPos = cand; break; }
+      }
+    }
+
+    // 准备 T 守包点位 & CT 回防进点位
+    const tBases = [];
+    for (const h of (map.holds && map.holds[site]) || []) tBases.push(h.pos.clone());
+    for (const [ox, oz] of [[2.8, 0], [-2.8, 0], [0, 2.8], [0, -2.8], [3.2, 3.2], [-3.2, -3.2]]) {
+      tBases.push(new THREE.Vector3(clamp(s.center.x + ox, s.min[0] + 1, s.max[0] - 1), s.center.y, clamp(s.center.z + oz, s.min[1] + 1, s.max[1] - 1)));
+    }
+    const ctKeys = site === 'A'
+      ? ['ct_to_a', 'a_short', 'short', 'long_corner', 'ct_mid', 'mid_doors', 'ct_spawn']
+      : ['b_doors', 'b_window', 'ct_mid', 'b_exit', 'lower_tunnel', 'mid_doors', 'ct_spawn'];
+    const ctBases = [];
+    for (const k of ctKeys) if (pts[k]) ctBases.push(pts[k].clone());
+    if (!ctBases.length) ctBases.push(...map.spawns.CT.map((p) => p.clone()));
+    shuffle(tBases);
+    shuffle(ctBases);
+
+    const usedT = [plantPos.clone()], usedCT = [];
+    const lookForT = pts[site === 'A' ? 'ct_to_a' : 'b_doors'] || pts.mid || map.spawns.CT[0] || plantPos;
+    const awpT = { v: false }, awpCT = { v: false };
+    let ti = 0, ci = 0;
+
+    for (const a of g.actors) {
+      const isT = a.team === 'T';
+      this.giveRetakeLoadout(a, isT ? ti : ci, isT ? awpT : awpCT);
+      const base = isT ? (tBases[ti % tBases.length] || s.center) : (ctBases[ci % ctBases.length] || map.spawns.CT[0]);
+      const fallback = isT ? s.center : (map.spawns.CT[ci % map.spawns.CT.length] || s.center);
+      const sp = this.safeSpot(base, fallback, isT ? usedT : usedCT);
+      const look = isT ? lookForT : plantPos;
+      const yaw = yawOf(look.x - sp.x, look.z - sp.z);
+      a.spawnAt(sp, yaw);
+      a.roundKills = 0;
+      if (a.brain) { a.brain.reset(); a.brain._retakeNadeDone = false; }
+      if (isT) ti++; else ci++;
+    }
+
+    // 回合开始即在目标包点安放好 C4（40s 倒计时在冻结结束后开始）
+    this.bomb = {
+      carrier: null, dropped: false, planted: true, pos: plantPos.clone(), yaw: 0,
+      timer: 40, defuseT: 0, beepT: 0.4, exploded: false, defused: false, site,
+    };
+    const m = g.bombModel(this.bomb.pos, 0);
+    this.bombMesh = m.group; this.bombLight = m.light;
+
+    this.phase = 'freeze'; this.t = this.freezeTime; g.frozen = true; g.noFire = true;
+    this.assignRetakeTasks(site);
+    HUD.hideDeath(); g.flashAmt = 0; g.deathT = 0;
+    const last = this.round === this.half ? '（换边前最后一局）' : (this.score.CT === this.toWin - 1 || this.score.T === this.toWin - 1) ? '（赛点）' : '';
+    g.center((P) => [
+      `残局回防 · 第 ${this.round} 回合 (${site}点)${last}`,
+      P.team === 'T' ? 'win-t' : 'win-ct',
+      3,
+      P.team === 'T' ? `C4 已安放在 ${site} 包点 · 守住 40 秒直至引爆` : `C4 已在 ${site} 包点启动 · 40 秒内回防拆除！`,
+    ]);
+  }
+
+  assignRetakeTasks(site) {
+    const g = this.g, B = this.bomb, map = g.map;
+    if (!B) return;
+    const cts = g.actors.filter((x) => x.isBot && x.alive && x.team === 'CT').sort((p, q) => p.pos.distanceTo(B.pos) - q.pos.distanceTo(B.pos));
+    cts.forEach((x, i) => {
+      x.brain.task = (i <= 1 || Math.random() < 0.5)
+        ? { type: 'defuse', pos: B.pos.clone(), urgent: i === 0 }
+        : { type: 'hold', pos: B.pos.clone().add(_g1.set(rand(-4, 4), 0, rand(-4, 4))), look: B.pos.clone().add(_g1.set(0, 1.2, 0)) };
+    });
+    const holds = (map.holds && map.holds[site]) || [];
+    const entry = (map.points && map.points[site === 'A' ? 'ct_to_a' : 'b_doors']) || B.pos;
+    g.actors.filter((x) => x.isBot && x.alive && x.team === 'T').forEach((x, i) => {
+      const h = holds.length ? holds[i % holds.length] : null;
+      x.brain.task = {
+        type: 'hold',
+        pos: h ? h.pos.clone() : x.pos.clone(),
+        look: (Math.random() < 0.5 ? entry : B.pos).clone().add(_g1.set(rand(-4, 4), 1.4, rand(-4, 4))),
+      };
+    });
+  }
+
+  tick(dt) {
+    const g = this.g;
+    if (this.phase === 'freeze') {
+      this.t -= dt;
+      if (this.t <= 0) {
+        this.phase = 'live'; this.t = this.roundTime; g.frozen = false; g.noFire = false;
+        if (this.bomb) g.playAt('armed', this.bomb.pos, { vol: 0.75, ref: 6 });
+        g.sound2d(['round_start', 0.5]);
+        g.center(['回防行动！', '', 1.2, `${this.tSite} 包点 C4 倒计时 40 秒`]);
+      }
+      return;
+    }
+    super.tick(dt);
+  }
+
+  updateBots(dt) {
+    super.updateBots(dt);
+    const g = this.g, B = this.bomb;
+    if (!B || !B.planted) return;
+    for (const a of g.actors) {
+      if (!a.isBot || !a.alive || !a.brain || a.brain.target || a.brain.nade || a.brain._retakeNadeDone) continue;
+      const d = a.pos.distanceTo(B.pos);
+      if (a.team === 'CT' && d > 8 && d < 22) {
+        a.brain._retakeNadeDone = true;
+        if (a.inv.nades.flash && Math.random() < 0.7) a.brain.planNade('flash', B.pos.clone().add(_g1.set(rand(-2, 2), 1.5, rand(-2, 2))));
+        else if (a.inv.nades.molotov && Math.random() < 0.55) a.brain.planNade('molotov', B.pos.clone().add(_g1.set(rand(-3, 3), 0, rand(-3, 3))));
+        else if (a.inv.nades.smoke && Math.random() < 0.55) a.brain.planNade('smoke', B.pos.clone());
+      } else if (a.team === 'T' && d < 16 && B.timer < 28) {
+        const nearCT = g.actors.find((o) => o.alive && o.team === 'CT' && o.pos.distanceTo(B.pos) < 18);
+        if (nearCT) {
+          a.brain._retakeNadeDone = true;
+          if (a.inv.nades.molotov && Math.random() < 0.7) a.brain.planNade('molotov', B.pos.clone());
+          else if (a.inv.nades.he && Math.random() < 0.55) a.brain.planNade('he', nearCT.pos.clone());
+        }
+      }
+    }
+  }
 }

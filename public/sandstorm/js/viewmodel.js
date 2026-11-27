@@ -34,6 +34,8 @@ class ViewModel {
     this.sprint = 0; this.slide = 0; this.slideDir = 1; this.hidden = false;
     this.flashT = 1;
     this.slideBack = 0;
+    this._lastActor = null;
+    this._seenEv = new WeakSet();
     this.buildArms();
     this.buildFlash();
   }
@@ -124,7 +126,10 @@ class ViewModel {
 
   // 事件（来自 actor.events）
   handle(ev, actor) {
-    const sk = (actor && actor.weapon && actor.weapon.id === ev.id && typeof Skins !== 'undefined') ? Skins.forWeapon(ev.id) : (typeof Skins !== 'undefined' && ev.id ? Skins.forWeapon(ev.id) : 'default');
+    const wid = ev.id || (actor && actor.weapon && actor.weapon.id);
+    const sk = (wid && actor && actor.skinOf)
+      ? actor.skinOf(wid)
+      : (wid && typeof Skins !== 'undefined' ? Skins.forWeapon(wid) : 'default');
     switch (ev.t) {
       case 'draw':
         this.setWeapon(ev.id, sk);
@@ -175,10 +180,28 @@ class ViewModel {
     if (this.sunDir) { this.sun.position.copy(this.sunDir).multiplyScalar(10); }
     this.sun.intensity = 2.4 * (0.2 + 0.8 * sunVis);
     this.hemi.intensity = 0.42 + 0.18 * sunVis;
-    for (const ev of actor.events) this.handle(ev, actor);
-    actor.events.length = 0;
-    if (actor.weapon && typeof Skins !== 'undefined') {
-      const wantSk = Skins.forWeapon(actor.weapon.id);
+    if (actor.team && this.team !== actor.team) this.setTeam(actor.team);
+    if (this._lastActor !== actor) {
+      this._lastActor = actor;
+      this.drawT = 1; this.reload = null; this.inspect = -1; this.knife = null; this.nade = null; this.plant = -1;
+      this.bolt = -1; this.pump = -1; this.shellTilt = 0; this.slideBack = 0; this.bfAnim = null; this.kbAnim = null;
+      this.flashT = 1;
+    }
+    if (actor.events && actor.events.length) {
+      if (actor.remote) {
+        // 房主观战远端玩家时不清空 actor.events，避免截走要发给远端客户端的事件
+        for (const ev of actor.events) {
+          if (!this._seenEv.has(ev)) { this._seenEv.add(ev); this.handle(ev, actor); }
+        }
+      } else {
+        for (const ev of actor.events) this.handle(ev, actor);
+        actor.events.length = 0;
+      }
+    }
+    if (actor.weapon) {
+      const wantSk = actor.skinOf
+        ? actor.skinOf(actor.weapon.id)
+        : (typeof Skins !== 'undefined' ? Skins.forWeapon(actor.weapon.id) : 'default');
       if (this.curId !== actor.weapon.id || this.curSkin !== wantSk) this.setWeapon(actor.weapon.id, wantSk);
     }
     if (!this.cur) return;
@@ -204,9 +227,11 @@ class ViewModel {
     this.strafeRoll = damp(this.strafeRoll, clamp(-actor.cmd.side * 0.035, -0.04, 0.04), 10, dt);
     rot.z += this.strafeRoll;
     pos.y += Math.sin(this.t * 1.7) * 0.0011; rot.x += Math.sin(this.t * 1.3) * 0.002;
-    // 甩枪惯性
-    this.swayX = damp(this.swayX, clamp(-mdx * 0.0006, -0.07, 0.07), 9, dt);
-    this.swayY = damp(this.swayY, clamp(-mdy * 0.0006, -0.06, 0.06), 9, dt);
+    // 甩枪惯性（观战他人时传入 0 鼠标增量，平滑回正）
+    const sxIn = actor.isPlayer ? (mdx || 0) : 0;
+    const syIn = actor.isPlayer ? (mdy || 0) : 0;
+    this.swayX = damp(this.swayX, clamp(-sxIn * 0.0006, -0.07, 0.07), 9, dt);
+    this.swayY = damp(this.swayY, clamp(-syIn * 0.0006, -0.06, 0.06), 9, dt);
     rot.y += this.swayX; rot.x += this.swayY; rot.z += this.swayX * 0.8;
     pos.x += this.swayX * 0.06; pos.y += this.swayY * 0.04;
     // 下蹲 / 冲刺 / 滑铲
@@ -451,6 +476,7 @@ class ViewModel {
 // 各类武器的基础持握位姿（相机空间）：p 位置 r 旋转 er 右肘偏移(相对枪) el 左肘偏移(相对左手)
 ViewModel.POSE = {
   rifle:    { p: [0.13, -0.132, -0.36], r: [0.0, 0.05, 0], er: [0.12, -0.2, 0.24], el: [-0.13, -0.22, 0.22] },
+  famas:    { p: [0.128, -0.14, -0.34], r: [0.0, 0.048, 0], er: [0.12, -0.2, 0.24], el: [-0.125, -0.22, 0.21] },
   shotgun:  { p: [0.135, -0.14, -0.35], r: [0.0, 0.05, 0], er: [0.12, -0.2, 0.24], el: [-0.13, -0.22, 0.22] },
   smg:      { p: [0.12, -0.125, -0.33], r: [0.0, 0.05, 0], er: [0.12, -0.2, 0.24], el: [-0.12, -0.22, 0.2] },
   p90:      { p: [0.115, -0.135, -0.29], r: [0.0, 0.04, 0], er: [0.12, -0.2, 0.24], el: [-0.12, -0.22, 0.2] },
@@ -460,6 +486,7 @@ ViewModel.POSE = {
   butterfly:{ p: [0.115, -0.125, -0.25], r: [0.12, 0.28, -0.55], er: [0.1, -0.2, 0.24], el: [-0.1, -0.2, 0.2] },
   karambit: { p: [0.135, -0.145, -0.27], r: [0.22, -0.28, -0.45], er: [0.1, -0.2, 0.24], el: [-0.1, -0.2, 0.2] },
   grenade:  { p: [0.14, -0.15, -0.3], r: [0.2, 0.2, -0.2], er: [0.1, -0.2, 0.24], el: [-0.1, -0.2, 0.2] },
+  molotov:  { p: [0.145, -0.115, -0.31], r: [0.1, 0.16, -0.14], er: [0.1, -0.2, 0.24], el: [-0.1, -0.2, 0.2] },
   c4:       { p: [0.0, -0.18, -0.36], r: [0.55, 0, 0], er: [0.14, -0.2, 0.22], el: [-0.14, -0.2, 0.22] },
 };
 const _vmP = new THREE.Vector3(), _vmR = new THREE.Vector3(), _vmL = new THREE.Vector3(), _vmT = new THREE.Vector3(), _vmT2 = new THREE.Vector3(), _vmT3 = new THREE.Vector3();

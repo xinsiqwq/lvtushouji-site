@@ -27,16 +27,53 @@ export const SCHEMA_STATEMENTS: readonly string[] = [
   "CREATE TABLE IF NOT EXISTS arcade_scores (id TEXT PRIMARY KEY, game_id TEXT NOT NULL, player_name TEXT NOT NULL, score INTEGER NOT NULL, duration_ms INTEGER NOT NULL DEFAULT 0, meta_json TEXT NOT NULL DEFAULT '{}', visitor_id TEXT NOT NULL, created_at TEXT NOT NULL)",
   'CREATE INDEX IF NOT EXISTS arcade_scores_desc ON arcade_scores(game_id, score DESC, created_at ASC)',
   'CREATE INDEX IF NOT EXISTS arcade_scores_asc ON arcade_scores(game_id, score ASC, created_at ASC)',
-  "CREATE TABLE IF NOT EXISTS arena_lobbies (code TEXT PRIMARY KEY, name TEXT NOT NULL, host_name TEXT NOT NULL, mode TEXT NOT NULL, is_public INTEGER NOT NULL DEFAULT 1, phase TEXT NOT NULL DEFAULT 'lobby', human_count INTEGER NOT NULL DEFAULT 0, max_humans INTEGER NOT NULL DEFAULT 8, bot_count INTEGER NOT NULL DEFAULT 4, bot_difficulty TEXT NOT NULL DEFAULT 'veteran', rounds_to_win INTEGER NOT NULL DEFAULT 5, target_kills INTEGER NOT NULL DEFAULT 25, score_red INTEGER NOT NULL DEFAULT 0, score_blue INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)",
+  "CREATE TABLE IF NOT EXISTS arena_lobbies (code TEXT PRIMARY KEY, name TEXT NOT NULL, host_name TEXT NOT NULL, mode TEXT NOT NULL, map_id TEXT NOT NULL DEFAULT 'dust', is_public INTEGER NOT NULL DEFAULT 1, phase TEXT NOT NULL DEFAULT 'lobby', human_count INTEGER NOT NULL DEFAULT 0, max_humans INTEGER NOT NULL DEFAULT 8, bot_count INTEGER NOT NULL DEFAULT 4, bot_difficulty TEXT NOT NULL DEFAULT 'veteran', rounds_to_win INTEGER NOT NULL DEFAULT 5, target_kills INTEGER NOT NULL DEFAULT 25, score_red INTEGER NOT NULL DEFAULT 0, score_blue INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)",
   'CREATE INDEX IF NOT EXISTS arena_lobbies_public ON arena_lobbies(is_public, updated_at DESC)',
-  "CREATE TABLE IF NOT EXISTS arena_matches (id TEXT PRIMARY KEY, room_code TEXT NOT NULL, source TEXT NOT NULL CHECK(source IN ('online', 'solo')), mode TEXT NOT NULL, winner_team TEXT NOT NULL, score_red INTEGER NOT NULL DEFAULT 0, score_blue INTEGER NOT NULL DEFAULT 0, mvp_name TEXT NOT NULL, mvp_kills INTEGER NOT NULL DEFAULT 0, mvp_deaths INTEGER NOT NULL DEFAULT 0, mvp_headshots INTEGER NOT NULL DEFAULT 0, duration_ms INTEGER NOT NULL DEFAULT 0, player_count INTEGER NOT NULL DEFAULT 1, bot_count INTEGER NOT NULL DEFAULT 0, players_json TEXT NOT NULL DEFAULT '[]', visitor_id TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL)",
+  "CREATE TABLE IF NOT EXISTS arena_matches (id TEXT PRIMARY KEY, room_code TEXT NOT NULL, source TEXT NOT NULL CHECK(source IN ('online', 'solo')), mode TEXT NOT NULL, map_id TEXT NOT NULL DEFAULT 'dust', winner_team TEXT NOT NULL, score_red INTEGER NOT NULL DEFAULT 0, score_blue INTEGER NOT NULL DEFAULT 0, mvp_name TEXT NOT NULL, mvp_kills INTEGER NOT NULL DEFAULT 0, mvp_deaths INTEGER NOT NULL DEFAULT 0, mvp_headshots INTEGER NOT NULL DEFAULT 0, duration_ms INTEGER NOT NULL DEFAULT 0, player_count INTEGER NOT NULL DEFAULT 1, bot_count INTEGER NOT NULL DEFAULT 0, players_json TEXT NOT NULL DEFAULT '[]', visitor_id TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL)",
   'CREATE INDEX IF NOT EXISTS arena_matches_created ON arena_matches(created_at DESC)',
+];
+
+const ARENA_V3_COLUMN_MIGRATIONS: ReadonlyArray<{
+  table: 'arena_lobbies' | 'arena_matches';
+  column: string;
+  alterSql: string;
+}> = [
+  {
+    table: 'arena_lobbies',
+    column: 'map_id',
+    alterSql: "ALTER TABLE arena_lobbies ADD COLUMN map_id TEXT NOT NULL DEFAULT 'dust'",
+  },
+  {
+    table: 'arena_matches',
+    column: 'map_id',
+    alterSql: "ALTER TABLE arena_matches ADD COLUMN map_id TEXT NOT NULL DEFAULT 'dust'",
+  },
 ];
 
 let schemaReady = false;
 
 export async function applySchema(db: D1Database): Promise<void> {
   await db.batch(SCHEMA_STATEMENTS.map((sql) => db.prepare(sql)));
+
+  // Safely upgrade existing local/prod D1 tables created prior to Sandstorm v3.0
+  const pragmaResults = await db.batch(
+    ARENA_V3_COLUMN_MIGRATIONS.map((m) => db.prepare(`PRAGMA table_info(${m.table})`)),
+  );
+  for (let i = 0; i < ARENA_V3_COLUMN_MIGRATIONS.length; i += 1) {
+    const migration = ARENA_V3_COLUMN_MIGRATIONS[i]!;
+    const cols = (pragmaResults[i]?.results ?? []) as Array<{ name?: string }>;
+    const hasColumn = cols.some((col) => col.name === migration.column);
+    if (!hasColumn) {
+      try {
+        await db.prepare(migration.alterSql).run();
+      } catch (err) {
+        if (!String(err).toLowerCase().includes('duplicate column')) {
+          throw err;
+        }
+      }
+    }
+  }
+
   schemaReady = true;
 }
 

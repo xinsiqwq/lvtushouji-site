@@ -2,7 +2,7 @@
 // ======================================================================
 //  core.js —— 常量 / 数学工具 / 设置 / 输入
 // ======================================================================
-const VERSION = '2.0.0';
+const VERSION = '3.0.0';
 
 const U = 0.0254;                 // 英寸 → 米（沿用经典 FPS 的英制单位制）
 const DEG = Math.PI / 180;
@@ -58,6 +58,14 @@ const UP = new THREE.Vector3(0, 1, 0);
 
 function fmtTime(s) { s = Math.max(0, Math.ceil(s)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
 function $(id) { return document.getElementById(id); }
+function escHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 // ======================================================================
 //  设置（localStorage 仅作便利，失败不影响运行）
@@ -67,15 +75,35 @@ const DEFAULT_SETTINGS = {
   sens: 1.6, zoomSens: 1.0, rawInput: true, invertY: false,
   moveMode: 'walk', slide: true, toggleCrouch: false, kbLock: false, knife: 'butterfly',
   map: 'dust', scopeMode: 'toggle', wheelMode: 'weapon', autoReload: true,
+  lowGrav: false, specFirstPerson: true,
   crossStyle: 'static', crossSize: 5, crossGap: 3, crossThick: 2, crossColor: '#3dff7f', crossDot: false, crossOutline: true, crossFollow: false,
   hitmarker: true,
   vmFov: 68, vmX: 1, vmY: 1, vmZ: -1, vmBob: true, leftHand: false,
   volume: 0.7,
   quality: 'high', renderScale: 1.0, fov: 92, sharpness: 0.35, showFps: true, motionFx: true,
   skins: {},
+  stattrak: {},
+  rangeBest: { kills: 0, hsRate: 0, avgMs: 0 },
 };
+function normRangeBest(rb) {
+  const o = rb && typeof rb === 'object' ? rb : {};
+  return {
+    kills: Math.max(0, Math.round(Number(o.kills) || 0)),
+    hsRate: Math.max(0, Math.min(100, Math.round(Number(o.hsRate) || 0))),
+    avgMs: Math.max(0, Math.round(Number(o.avgMs) || 0)),
+  };
+}
+function normStatTrak(st) {
+  const out = {};
+  if (!st || typeof st !== 'object') return out;
+  for (const k of Object.keys(st)) {
+    const n = Math.floor(Number(st[k]));
+    if (Number.isFinite(n) && n > 0) out[k] = n;
+  }
+  return out;
+}
 const Settings = {
-  data: Object.assign({}, DEFAULT_SETTINGS, { skins: {} }),
+  data: Object.assign({}, DEFAULT_SETTINGS, { skins: {}, stattrak: {}, rangeBest: { kills: 0, hsRate: 0, avgMs: 0 } }),
   listeners: [],
   load() {
     try {
@@ -83,29 +111,60 @@ const Settings = {
       if (s) {
         const parsed = JSON.parse(s);
         Object.assign(this.data, parsed);
-        this.data.skins = Object.assign({}, (parsed && parsed.skins) || {});
+        this.data.skins = Object.assign({}, (parsed && parsed.skins && typeof parsed.skins === 'object') ? parsed.skins : {});
+        this.data.stattrak = normStatTrak(parsed && parsed.stattrak);
+        this.data.rangeBest = normRangeBest(parsed && parsed.rangeBest);
       }
       // 早期版本的取值已废弃，未知值回落到默认
       if (this.data.moveMode !== 'walk' && this.data.moveMode !== 'sprint') this.data.moveMode = DEFAULT_SETTINGS.moveMode;
       if (this.data.scopeMode !== 'toggle' && this.data.scopeMode !== 'hold') this.data.scopeMode = DEFAULT_SETTINGS.scopeMode;
       if (this.data.wheelMode !== 'weapon' && this.data.wheelMode !== 'jump') this.data.wheelMode = DEFAULT_SETTINGS.wheelMode;
       if (!this.data.skins || typeof this.data.skins !== 'object') this.data.skins = {};
+      this.data.stattrak = normStatTrak(this.data.stattrak);
+      this.data.rangeBest = normRangeBest(this.data.rangeBest);
+      this.data.lowGrav = !!this.data.lowGrav;
+      this.data.specFirstPerson = this.data.specFirstPerson !== false;
     } catch (e) { /* 隐私模式等 */ }
   },
   save() {
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(this.data)); } catch (e) { /* ignore */ }
     for (const f of this.listeners) f(this.data);
   },
-  reset() { this.data = Object.assign({}, DEFAULT_SETTINGS, { skins: {} }); this.save(); },
+  reset() {
+    const keepSt = normStatTrak(this.data && this.data.stattrak);
+    const keepRb = normRangeBest(this.data && this.data.rangeBest);
+    this.data = Object.assign({}, DEFAULT_SETTINGS, { skins: {}, stattrak: keepSt, rangeBest: keepRb });
+    this.save();
+  },
   onChange(f) { this.listeners.push(f); },
 };
 Settings.load();
+
+const StatTrak = {
+  get(wid) {
+    if (!wid || !Settings.data.stattrak || typeof Settings.data.stattrak !== 'object') return 0;
+    const v = Math.floor(Number(Settings.data.stattrak[wid]));
+    return Number.isFinite(v) && v > 0 ? v : 0;
+  },
+  recordKill(wid) {
+    if (!wid) return 0;
+    if (!Settings.data.stattrak || typeof Settings.data.stattrak !== 'object') Settings.data.stattrak = {};
+    const next = this.get(wid) + 1;
+    Settings.data.stattrak[wid] = next;
+    Settings.save();
+    return next;
+  },
+  all() {
+    if (!Settings.data.stattrak || typeof Settings.data.stattrak !== 'object') Settings.data.stattrak = {};
+    return Settings.data.stattrak;
+  },
+};
 
 // ======================================================================
 //  输入
 // ======================================================================
 const GAME_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight',
-  'KeyC', 'KeyR', 'KeyF', 'KeyE', 'KeyQ', 'KeyG', 'KeyB', 'Tab', 'AltLeft', 'AltRight',
+  'KeyC', 'KeyR', 'KeyF', 'KeyE', 'KeyQ', 'KeyG', 'KeyB', 'KeyZ', 'KeyV', 'KeyT', 'KeyJ', 'KeyK', 'KeyL', 'Tab', 'AltLeft', 'AltRight',
   'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'F1', 'F2',
   'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0']);
 

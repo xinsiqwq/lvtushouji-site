@@ -6,6 +6,7 @@ import type {
   ArenaAdminSnapshotResponse,
   ArenaGameMode,
   ArenaLobbySummary,
+  ArenaMapId,
   ArenaMatchRecord,
   ArenaPhase,
 } from '../../../shared/types';
@@ -50,7 +51,29 @@ function formatScoreWithUnit(gameId: ArcadeGameId, score: number): string {
 }
 
 function formatArenaMode(mode: ArenaGameMode): string {
-  return mode === 'deathmatch' ? '团队死斗' : '5v5 爆破竞技';
+  switch (mode) {
+    case 'deathmatch':
+      return '团队死斗';
+    case 'armsrace':
+      return '军备竞赛';
+    case 'retake':
+      return '残局回防';
+    default:
+      return '5v5 爆破竞技';
+  }
+}
+
+function formatArenaMap(mapId: ArenaMapId | undefined): string {
+  switch (mapId) {
+    case 'frost':
+      return '极地科研站';
+    case 'harbor':
+      return '黄昏货运港';
+    case 'mars':
+      return '赤岩前哨';
+    default:
+      return '炽沙小镇';
+  }
 }
 
 function formatArenaPhase(phase: ArenaPhase): string {
@@ -661,7 +684,7 @@ export function ArcadeAdminPanel({ onStatus, onError }: ArcadeAdminPanelProps) {
             <div className="min-w-0">
               <h2 className="m-0 flex items-center gap-2 text-[18px] font-semibold text-ink">
                 <Crosshair className="h-5 w-5 shrink-0 text-postmark" aria-hidden="true" />
-                <span>沙暴行动 · SANDSTORM（炽沙小镇 3D 战术射击）</span>
+                <span>沙暴行动 · SANDSTORM v3.0（4 图 3D 战术射击）</span>
               </h2>
               <p className="mt-1.5 mb-0 text-[13.5px] text-ink-muted">
                 实时检视 Cloudflare Durable Objects 64Hz 云端联机房间索引，并管理 D1 对局战报归档（自动保留最新 100 局）。
@@ -759,7 +782,10 @@ export function ArcadeAdminPanel({ onStatus, onError }: ArcadeAdminPanelProps) {
                     <div className="mt-2 truncate text-[14px] font-medium text-ink">
                       {lobby.name}
                     </div>
-                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-ink-muted">
+                    <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12px] text-ink-muted">
+                      <span className="rounded-full border border-hairline bg-surface px-2 py-0 text-[11px] text-ink">
+                        {formatArenaMap(lobby.mapId)}
+                      </span>
                       <span>{formatArenaMode(lobby.mode)}</span>
                       <span className="tabular-nums-mono">
                         真人 {lobby.humanCount}/{lobby.maxHumans}
@@ -854,7 +880,7 @@ export function ArcadeAdminPanel({ onStatus, onError }: ArcadeAdminPanelProps) {
                   <thead>
                     <tr className="border-b border-hairline text-[12px] font-medium text-ink-muted">
                       <th className="py-2.5 pr-3 pl-2">来源 / 房号</th>
-                      <th className="px-3 py-2.5">模式</th>
+                      <th className="px-3 py-2.5">地图 / 模式</th>
                       <th className="px-3 py-2.5">比分与胜方</th>
                       <th className="px-3 py-2.5">本场 MVP</th>
                       <th className="px-3 py-2.5">参战 / 耗时</th>
@@ -879,7 +905,12 @@ export function ArcadeAdminPanel({ onStatus, onError }: ArcadeAdminPanelProps) {
                             </div>
                           </td>
                           <td className="px-3 py-3 whitespace-nowrap text-[12.5px] text-ink-muted">
-                            {formatArenaMode(match.mode)}
+                            <div className="flex items-center gap-1.5">
+                              <span className="rounded-full border border-hairline bg-paper px-2 py-0.5 text-[11px] text-ink">
+                                {formatArenaMap(match.mapId)}
+                              </span>
+                              <span>{formatArenaMode(match.mode)}</span>
+                            </div>
                           </td>
                           <td className="px-3 py-3 whitespace-nowrap">
                             <span className="tabular-nums-mono font-semibold text-ink">
@@ -940,6 +971,9 @@ export function ArcadeAdminPanel({ onStatus, onError }: ArcadeAdminPanelProps) {
                           <div className="flex flex-wrap items-center gap-1.5">
                             <span className="rounded-full border border-hairline bg-surface px-2 py-0.5 text-[11.5px] text-ink">
                               {match.source === 'online' ? '联机' : '单人 AI'}
+                            </span>
+                            <span className="rounded-full border border-hairline bg-surface px-2 py-0.5 text-[11px] text-ink">
+                              {formatArenaMap(match.mapId)}
                             </span>
                             <span className="tabular-nums-mono text-[12.5px] font-medium text-accent">
                               {match.roomCode}

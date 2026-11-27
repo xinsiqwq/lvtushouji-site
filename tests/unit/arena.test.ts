@@ -2,6 +2,7 @@ import { env, SELF } from 'cloudflare:test';
 import { unzipSync } from 'fflate';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { resetTestDatabase } from './test-db';
+import { applySchema, resetSchemaReadyForTests } from '../../src/server/db/schema';
 import type { AppBindings } from '../../src/server/types';
 import {
   ARENA_ROOM_CODE_ALPHABET,
@@ -688,6 +689,326 @@ describe('Phase 4 SANDSTORM Durable Object 64Hz Relay, Anti-Spoof & Admin Contro
       expect(resetRes.status).toBe(200);
     } finally {
       hostWs.close();
+      await new Promise((r) => setTimeout(r, 80));
+    }
+  });
+
+  it('supports Sandstorm v3.0 mars map, armsrace/retake modes, live "t":"score" lobby sync with zero D1 ticks on "t":"s" bursts, mapId round-tripping, and legacy schema auto-migration', async () => {
+    // 1. Verify applySchema safely migrates legacy arena_lobbies & arena_matches missing map_id
+    await env.DB.batch([
+      env.DB.prepare('DROP TABLE IF EXISTS arena_lobbies'),
+      env.DB.prepare('DROP TABLE IF EXISTS arena_matches'),
+      env.DB.prepare(
+        "CREATE TABLE arena_lobbies (code TEXT PRIMARY KEY, name TEXT NOT NULL, host_name TEXT NOT NULL, mode TEXT NOT NULL, is_public INTEGER NOT NULL DEFAULT 1, phase TEXT NOT NULL DEFAULT 'lobby', human_count INTEGER NOT NULL DEFAULT 0, max_humans INTEGER NOT NULL DEFAULT 8, bot_count INTEGER NOT NULL DEFAULT 4, bot_difficulty TEXT NOT NULL DEFAULT 'veteran', rounds_to_win INTEGER NOT NULL DEFAULT 5, target_kills INTEGER NOT NULL DEFAULT 25, score_red INTEGER NOT NULL DEFAULT 0, score_blue INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)",
+      ),
+      env.DB.prepare(
+        "CREATE TABLE arena_matches (id TEXT PRIMARY KEY, room_code TEXT NOT NULL, source TEXT NOT NULL CHECK(source IN ('online', 'solo')), mode TEXT NOT NULL, winner_team TEXT NOT NULL, score_red INTEGER NOT NULL DEFAULT 0, score_blue INTEGER NOT NULL DEFAULT 0, mvp_name TEXT NOT NULL, mvp_kills INTEGER NOT NULL DEFAULT 0, mvp_deaths INTEGER NOT NULL DEFAULT 0, mvp_headshots INTEGER NOT NULL DEFAULT 0, duration_ms INTEGER NOT NULL DEFAULT 0, player_count INTEGER NOT NULL DEFAULT 1, bot_count INTEGER NOT NULL DEFAULT 0, players_json TEXT NOT NULL DEFAULT '[]', visitor_id TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL)",
+      ),
+    ]);
+    resetSchemaReadyForTests();
+    await applySchema(env.DB);
+    const [lobbyInfo, matchInfo] = await env.DB.batch([
+      env.DB.prepare('PRAGMA table_info(arena_lobbies)'),
+      env.DB.prepare('PRAGMA table_info(arena_matches)'),
+    ]);
+    expect((lobbyInfo.results as Array<{ name: string }>).some((c) => c.name === 'map_id')).toBe(
+      true,
+    );
+    expect((matchInfo.results as Array<{ name: string }>).some((c) => c.name === 'map_id')).toBe(
+      true,
+    );
+
+    // 2. Reject invalid mapId / mode on room creation
+    const badMapRes = await SELF.fetch(`${ORIGIN}/api/arena/rooms`, {
+      method: 'POST',
+      headers: { origin: ORIGIN, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: '非法地图', mode: 'armsrace', mapId: 'pluto' }),
+    });
+    expect(badMapRes.status).toBe(400);
+
+    const badModeRes = await SELF.fetch(`${ORIGIN}/api/arena/rooms`, {
+      method: 'POST',
+      headers: { origin: ORIGIN, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: '非法模式', mode: 'battle_royale', mapId: 'mars' }),
+    });
+    expect(badModeRes.status).toBe(400);
+
+    // 3. Create public Mars Arms Race room and verify GET /api/arena/rooms returns mapId & mode
+    const createMarsRes = await SELF.fetch(`${ORIGIN}/api/arena/rooms`, {
+      method: 'POST',
+      headers: { origin: ORIGIN, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: '火星赤岩前哨测试房',
+        hostName: '火星指挥官',
+        mode: 'armsrace',
+        mapId: 'mars',
+        isPublic: true,
+        maxHumans: 10,
+      }),
+    });
+    expect(createMarsRes.status).toBe(201);
+    const createdMars = (await createMarsRes.json()) as ArenaCreateRoomResponse;
+    expect(createdMars.room.mode).toBe('armsrace');
+    expect(createdMars.room.mapId).toBe('mars');
+    expect(createdMars.room.scoreRed).toBe(0);
+    expect(createdMars.room.scoreBlue).toBe(0);
+
+    const roomsListRes = await SELF.fetch(`${ORIGIN}/api/arena/rooms`);
+    expect(roomsListRes.status).toBe(200);
+    const roomsList = (await roomsListRes.json()) as ArenaRoomsListResponse;
+    const listedMars = roomsList.rooms.find((r) => r.code === createdMars.code);
+    expect(listedMars?.mode).toBe('armsrace');
+    expect(listedMars?.mapId).toBe('mars');
+
+    // 4. Connect Host + Guest, verify lobby/start/score/end sync + ZERO D1 writes on 64Hz "t":"s" bursts
+    const wsHostRes = await SELF.fetch(
+      `${ORIGIN}/api/arena/ws?room=${createdMars.code}&proto=sandstorm`,
+      { headers: { upgrade: 'websocket', origin: ORIGIN } },
+    );
+    expect(wsHostRes.status).toBe(101);
+    const host = new RawWsRecorder(wsHostRes.webSocket!);
+
+    const wsGuestRes = await SELF.fetch(
+      `${ORIGIN}/api/arena/ws?room=${createdMars.code}&proto=sandstorm`,
+      { headers: { upgrade: 'websocket', origin: ORIGIN } },
+    );
+    expect(wsGuestRes.status).toBe(101);
+    const guest = new RawWsRecorder(wsGuestRes.webSocket!);
+
+    try {
+      host.sendRaw(JSON.stringify({ t: 'hello', role: 'host', name: '火星指挥官' }));
+      const hostWelcomeRaw = await host.waitForFrame(
+        (f) => f.startsWith('0|') && f.includes('"t":"welcome"'),
+      );
+      const hostWelcome = JSON.parse(hostWelcomeRaw.slice(2)) as {
+        id: number;
+        archiveToken: string;
+      };
+
+      guest.sendRaw(JSON.stringify({ t: 'hello', role: 'guest', name: '火星先锋' }));
+      await guest.waitForFrame((f) => f.startsWith('0|') && f.includes('"t":"welcome"'));
+
+      // Host changes options in lobby -> retake on harbor
+      host.sendRaw(
+        '*|' + JSON.stringify({ t: 'lobby', ing: false, opts: { mode: 'retake', map: 'harbor' } }),
+      );
+      await guest.waitForFrame((f) => f.includes('"t":"lobby"') && f.includes('"map":"harbor"'));
+      await new Promise((r) => setTimeout(r, 80));
+
+      const afterLobbyOpts = await env.DB.prepare(
+        'SELECT mode, map_id, phase, score_red, score_blue FROM arena_lobbies WHERE code = ?',
+      )
+        .bind(createdMars.code)
+        .first<{
+          mode: string;
+          map_id: string;
+          phase: string;
+          score_red: number;
+          score_blue: number;
+        }>();
+      expect(afterLobbyOpts).toEqual({
+        mode: 'retake',
+        map_id: 'harbor',
+        phase: 'lobby',
+        score_red: 0,
+        score_blue: 0,
+      });
+
+      // Host starts match on Mars in retake mode -> phase='live', map_id='mars', scores=0:0
+      host.sendRaw('*|' + JSON.stringify({ t: 'start', opts: { mode: 'retake', map: 'mars' } }));
+      await guest.waitForFrame((f) => f.includes('"t":"start"') && f.includes('"map":"mars"'));
+      await new Promise((r) => setTimeout(r, 80));
+
+      // Host broadcasts score update: sc: [ctScore, tScore] => scoreBlue = 5, scoreRed = 3
+      host.sendRaw('*|' + JSON.stringify({ t: 'score', sc: [5, 3] }));
+      await guest.waitForFrame((f) => f.includes('"t":"score"') && f.includes('[5,3]'));
+      await new Promise((r) => setTimeout(r, 80));
+
+      const lobbyAfterScore = await env.DB.prepare(
+        'SELECT mode, map_id, phase, score_red, score_blue, updated_at FROM arena_lobbies WHERE code = ?',
+      )
+        .bind(createdMars.code)
+        .first<{
+          mode: string;
+          map_id: string;
+          phase: string;
+          score_red: number;
+          score_blue: number;
+          updated_at: string;
+        }>();
+      expect(lobbyAfterScore?.mode).toBe('retake');
+      expect(lobbyAfterScore?.map_id).toBe('mars');
+      expect(lobbyAfterScore?.phase).toBe('live');
+      expect(lobbyAfterScore?.score_red).toBe(3);
+      expect(lobbyAfterScore?.score_blue).toBe(5);
+
+      const doStatusRes = await (env as unknown as AppBindings).ARENA_ROOM.getByName(
+        `room:${createdMars.code}`,
+      ).fetch('https://arena.internal/status');
+      expect(doStatusRes.status).toBe(200);
+      const doStatus = (await doStatusRes.json()) as {
+        room: { mode: string; mapId: string; phase: string; scoreRed: number; scoreBlue: number };
+      };
+      expect(doStatus.room.mode).toBe('retake');
+      expect(doStatus.room.mapId).toBe('mars');
+      expect(doStatus.room.phase).toBe('live');
+      expect(doStatus.room.scoreRed).toBe(3);
+      expect(doStatus.room.scoreBlue).toBe(5);
+
+      // Duplicate identical score + 160 high-frequency 64Hz "t":"s" snapshots -> ZERO D1 writes!
+      host.sendRaw('*|' + JSON.stringify({ t: 'score', sc: [5, 3] }));
+      for (let tk = 1; tk <= 160; tk += 1) {
+        host.sendRaw('*|' + JSON.stringify({ t: 's', tk, A: [[1, 0, 1, 0, 0, 0]], M: {} }));
+      }
+      await guest.waitForFrame((f) => f.includes('"t":"s"') && f.includes('"tk":160'));
+      await new Promise((r) => setTimeout(r, 80));
+
+      const lobbyAfterBurst = await env.DB.prepare(
+        'SELECT updated_at, score_red, score_blue FROM arena_lobbies WHERE code = ?',
+      )
+        .bind(createdMars.code)
+        .first<{ updated_at: string; score_red: number; score_blue: number }>();
+      expect(lobbyAfterBurst?.updated_at).toBe(lobbyAfterScore?.updated_at);
+      expect(lobbyAfterBurst?.score_red).toBe(3);
+      expect(lobbyAfterBurst?.score_blue).toBe(5);
+
+      // Host ends match -> phase back to lobby and live scores reset to 0:0
+      host.sendRaw('*|' + JSON.stringify({ t: 'end' }));
+      await guest.waitForFrame((f) => f === `${hostWelcome.id}|{"t":"end"}`);
+      await new Promise((r) => setTimeout(r, 80));
+
+      const lobbyAfterEnd = await env.DB.prepare(
+        'SELECT phase, score_red, score_blue FROM arena_lobbies WHERE code = ?',
+      )
+        .bind(createdMars.code)
+        .first<{ phase: string; score_red: number; score_blue: number }>();
+      expect(lobbyAfterEnd).toEqual({ phase: 'lobby', score_red: 0, score_blue: 0 });
+
+      // 5. Round-trip online Retake match on Mars + solo Arms Race match defaulting to dust
+      const retakeArchiveRes = await SELF.fetch(`${ORIGIN}/api/arena/matches`, {
+        method: 'POST',
+        headers: { origin: ORIGIN, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          roomCode: createdMars.code,
+          source: 'online',
+          archiveToken: hostWelcome.archiveToken,
+          mode: 'retake',
+          mapId: 'mars',
+          winnerTeam: 'blue',
+          scoreRed: 4,
+          scoreBlue: 7,
+          mvpName: '火星指挥官',
+          mvpKills: 14,
+          mvpDeaths: 5,
+          mvpHeadshots: 8,
+          durationMs: 185000,
+          playerCount: 2,
+          botCount: 8,
+          players: [
+            {
+              id: 'p_host',
+              name: '火星指挥官',
+              team: 'blue',
+              isBot: false,
+              kills: 14,
+              deaths: 5,
+              assists: 2,
+              headshots: 8,
+              damage: 1640,
+              score: 310,
+            },
+            {
+              id: 'p_guest',
+              name: '火星先锋',
+              team: 'red',
+              isBot: false,
+              kills: 9,
+              deaths: 8,
+              assists: 3,
+              headshots: 4,
+              damage: 1120,
+              score: 205,
+            },
+          ],
+        }),
+      });
+      expect(retakeArchiveRes.status).toBe(201);
+      const retakeSaved = (await retakeArchiveRes.json()) as {
+        match: { id: string; mode: string; mapId: string };
+      };
+      expect(retakeSaved.match.mode).toBe('retake');
+      expect(retakeSaved.match.mapId).toBe('mars');
+
+      const armsRaceArchiveRes = await SELF.fetch(`${ORIGIN}/api/arena/matches`, {
+        method: 'POST',
+        headers: { origin: ORIGIN, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          source: 'solo',
+          mode: 'armsrace',
+          winnerTeam: 'red',
+          scoreRed: 12,
+          scoreBlue: 9,
+          mvpName: '黄金爪刀',
+          mvpKills: 24,
+          mvpDeaths: 6,
+          mvpHeadshots: 11,
+          durationMs: 162000,
+          playerCount: 1,
+          botCount: 9,
+          players: [
+            {
+              id: 'p_ar',
+              name: '黄金爪刀',
+              team: 'red',
+              isBot: false,
+              kills: 24,
+              deaths: 6,
+              assists: 1,
+              headshots: 11,
+              damage: 2540,
+              score: 480,
+            },
+          ],
+        }),
+      });
+      expect(armsRaceArchiveRes.status).toBe(201);
+      const armsRaceSaved = (await armsRaceArchiveRes.json()) as {
+        match: { id: string; mode: string; mapId: string };
+      };
+      expect(armsRaceSaved.match.mode).toBe('armsrace');
+      expect(armsRaceSaved.match.mapId).toBe('dust');
+
+      const matchesGetRes = await SELF.fetch(`${ORIGIN}/api/arena/matches?limit=10`);
+      expect(matchesGetRes.status).toBe(200);
+      const matchesGet = (await matchesGetRes.json()) as ArenaMatchesResponse;
+      const foundRetake = matchesGet.matches.find((m) => m.id === retakeSaved.match.id);
+      const foundArmsRace = matchesGet.matches.find((m) => m.id === armsRaceSaved.match.id);
+      expect(foundRetake?.mode).toBe('retake');
+      expect(foundRetake?.mapId).toBe('mars');
+      expect(foundRetake?.players).toHaveLength(2);
+      expect(foundArmsRace?.mode).toBe('armsrace');
+      expect(foundArmsRace?.mapId).toBe('dust');
+
+      // 6. Admin snapshot & SQL backup work cleanly with the new map_id column
+      const auth = await setupAdmin();
+      const adminSnapRes = await SELF.fetch(`${ORIGIN}/api/admin/arena/snapshot`, {
+        headers: adminHeaders(auth, false),
+      });
+      expect(adminSnapRes.status).toBe(200);
+      const adminSnap = (await adminSnapRes.json()) as ArenaAdminSnapshotResponse;
+      expect(adminSnap.lobbies.find((l) => l.code === createdMars.code)?.mapId).toBe('mars');
+      expect(adminSnap.matches.find((m) => m.id === retakeSaved.match.id)?.mapId).toBe('mars');
+
+      const backupRes = await SELF.fetch(`${ORIGIN}/api/admin/backup`, {
+        headers: adminHeaders(auth, false),
+      });
+      expect(backupRes.status).toBe(200);
+      const backupFiles = unzipSync(new Uint8Array(await backupRes.arrayBuffer()));
+      const backupSql = new TextDecoder().decode(backupFiles['library.sql']);
+      expect(backupSql).toContain('INSERT INTO arena_matches');
+    } finally {
+      host.close();
+      guest.close();
       await new Promise((r) => setTimeout(r, 80));
     }
   });

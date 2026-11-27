@@ -28,6 +28,13 @@ const GALIL_PATTERN = [
   [7.2, 0.9], [7.25, 0.1], [7.3, -0.7], [7.35, -1.25], [7.4, -1.45], [7.42, -1.2], [7.45, -0.6], [7.48, 0.15], [7.5, 0.8], [7.52, 1.1],
   [7.55, 0.95], [7.55, 0.5], [7.58, 0.05], [7.6, -0.35], [7.6, -0.6],
 ];
+// FAMAS：25 发紧凑上跳 → 小幅右偏 → 左拉回中
+const FAMAS_PATTERN = [
+  [0, 0], [0.32, 0.02], [0.85, 0.06], [1.55, 0.12], [2.3, 0.08], [3.05, -0.05],
+  [3.75, 0.15], [4.3, 0.45], [4.75, 0.85], [5.05, 1.25], [5.25, 1.45], [5.4, 1.25], [5.5, 0.75],
+  [5.6, 0.1], [5.68, -0.55], [5.75, -1.1], [5.8, -1.45], [5.85, -1.55], [5.9, -1.3], [5.95, -0.8],
+  [6.0, -0.2], [6.05, 0.35], [6.1, 0.75], [6.12, 0.9], [6.15, 0.7],
+];
 function genPattern(n, step, decay, yawAmp, yawFreq, phase = 0) {
   const p = [[0, 0]];
   let pitch = 0;
@@ -51,7 +58,7 @@ const WEAPONS = {
   },
   glock: {
     id: 'glock', name: 'Glock-18', slot: 2, type: 'pistol', team: 'T', price: 200, killReward: 300,
-    damage: 30, armorPen: 0.47, rangeMod: 0.85, pen: 0.1, cycle: 0.15, auto: false, mag: 20, reserve: 120,
+    damage: 30, armorPen: 0.47, rangeMod: 0.85, pen: 0.1, cycle: 0.15, auto: false, burstMode: true, mag: 20, reserve: 120,
     reload: 2.27, draw: 1.0, speed: 240 * U,
     spread: 2.0, inaccStand: 7.0, inaccCrouch: 5.5, inaccMove: 16, inaccJump: 220, inaccLand: 60, inaccFire: 28, recovery: 0.35,
     pattern: genPattern(20, 0.95, 0.12, 0.35, 1.7), recoilRecover: 8, viewKick: [0.9, 0.3], tracer: 0, sound: 'glock', vol: 0.85,
@@ -105,6 +112,13 @@ const WEAPONS = {
     spread: 0.75, inaccStand: 7.4, inaccCrouch: 5.4, inaccMove: 135, inaccJump: 400, inaccLand: 145, inaccFire: 7.2, recovery: 0.36,
     pattern: GALIL_PATTERN, recoilScale: 0.9, recoilRecover: 56, viewKick: [0.48, 0.26], tracer: 1, sound: 'galil', vol: 0.95,
   },
+  famas: {
+    id: 'famas', name: 'FAMAS', slot: 1, type: 'rifle', team: 'CT', price: 2050, killReward: 300,
+    damage: 30, armorPen: 0.70, rangeMod: 0.96, pen: 0.26, cycle: 0.09, auto: true, burstMode: true, mag: 25, reserve: 90,
+    reload: 3.1, draw: 1.0, speed: 220 * U,
+    spread: 0.65, inaccStand: 6.2, inaccCrouch: 4.5, inaccMove: 122, inaccJump: 380, inaccLand: 138, inaccFire: 6.6, recovery: 0.34,
+    pattern: FAMAS_PATTERN, recoilScale: 0.86, recoilRecover: 58, viewKick: [0.42, 0.22], tracer: 1, sound: 'famas', vol: 0.92,
+  },
   ak47: {
     id: 'ak47', name: 'AK-47', slot: 1, type: 'rifle', team: 'T', price: 2700, killReward: 300,
     damage: 36, armorPen: 0.775, rangeMod: 0.98, pen: 0.3, cycle: 0.1, auto: true, mag: 30, reserve: 90,
@@ -145,10 +159,12 @@ const WEAPONS = {
   he: { id: 'he', name: '高爆手雷', short: 'HE', slot: 4, type: 'grenade', price: 300, speed: 245 * U, draw: 0.6, max: 1 },
   flash: { id: 'flash', name: '闪光弹', short: '闪光', slot: 4, type: 'grenade', price: 200, speed: 245 * U, draw: 0.6, max: 2 },
   smoke: { id: 'smoke', name: '烟雾弹', short: '烟雾', slot: 4, type: 'grenade', price: 300, speed: 245 * U, draw: 0.6, max: 1 },
+  molotov: { id: 'molotov', name: '燃烧弹', short: '火', slot: 4, type: 'grenade', price: 400, speed: 245 * U, draw: 0.65, max: 1 },
   c4: { id: 'c4', name: 'C4 炸弹', short: 'C4', slot: 5, type: 'c4', speed: 250 * U, draw: 0.8, price: 0 },
 };
-const GRENADE_ORDER = ['he', 'flash', 'smoke'];
-const ARMORY_WEAPONS = ['ak47', 'm4a4', 'm4a1s', 'galil', 'awp', 'ssg08', 'p90', 'mp9', 'nova', 'deagle', 'usp', 'p250', 'glock', 'butterfly', 'karambit', 'knife'];
+const GRENADE_ORDER = ['he', 'flash', 'smoke', 'molotov'];
+const ARMORY_WEAPONS = ['ak47', 'm4a4', 'm4a1s', 'galil', 'famas', 'awp', 'ssg08', 'p90', 'mp9', 'nova', 'deagle', 'usp', 'p250', 'glock', 'butterfly', 'karambit', 'knife'];
+const ARMS_RACE_LADDER = ['mp9', 'p90', 'nova', 'galil', 'famas', 'm4a1s', 'm4a4', 'ak47', 'ssg08', 'awp', 'deagle', 'karambit'];
 
 const EQUIP = {
   kevlar: { id: 'kevlar', name: '防弹衣', price: 650 },
@@ -159,9 +175,9 @@ const EQUIP = {
 const BUY_MENU = [
   { title: '手枪', items: ['glock', 'usp', 'p250', 'deagle'] },
   { title: '微冲 / 霰弹', items: ['mp9', 'p90', 'nova'] },
-  { title: '步枪', items: ['galil', 'ak47', 'm4a1s', 'm4a4'] },
+  { title: '步枪', items: ['galil', 'famas', 'ak47', 'm4a1s', 'm4a4'] },
   { title: '狙击枪', items: ['ssg08', 'awp'] },
-  { title: '装备 / 投掷物', items: ['kevlar', 'helmet', 'defuser', 'he', 'flash', 'smoke'] },
+  { title: '装备 / 投掷物', items: ['kevlar', 'helmet', 'defuser', 'he', 'flash', 'smoke', 'molotov'] },
 ];
 
 function patternAt(def, idx) {
@@ -180,5 +196,6 @@ class WeaponInst {
     this.id = id;
     this.mag = this.def.mag || 0;
     this.reserve = this.def.reserve || 0;
+    this.burst = false;
   }
 }

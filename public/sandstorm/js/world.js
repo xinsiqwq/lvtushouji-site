@@ -15,6 +15,9 @@ const MATS = {
   tile:     { pen: 0.4,  dmg: 0.45, fx: 'stone', step: 'stone', snd: 'imp_stone' },
   wood:     { pen: 1.8,  dmg: 0.82, fx: 'wood',  step: 'wood',  snd: 'imp_wood' },
   metal:    { pen: 0.55, dmg: 0.6,  fx: 'metal', step: 'metal', snd: 'imp_metal' },
+  mars_sand:  { pen: 1.0,  dmg: 0.62, fx: 'mars',  step: 'sand',  snd: 'imp_sand' },
+  mars_rock:  { pen: 0.48, dmg: 0.45, fx: 'mars',  step: 'stone', snd: 'imp_stone' },
+  mars_panel: { pen: 0.55, dmg: 0.58, fx: 'metal', step: 'metal', snd: 'imp_metal' },
 };
 
 // slab 求交的副输出

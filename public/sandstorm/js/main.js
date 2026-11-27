@@ -67,7 +67,7 @@ const FinalShader = {
 
 const Engine = {
   game: null, paused: false, forceRun: false, menuT: 0,
-  opts: { mode: 'comp', team: 'CT', diff: 'normal', size: 5, map: Settings.data.map || 'dust', ff: false },
+  opts: { mode: 'comp', team: 'CT', diff: 'normal', size: 5, map: Settings.data.map || 'dust', lowGrav: !!Settings.data.lowGrav, ff: false },
 
   progress(p, msg) { $('loadBar').style.width = (p * 100).toFixed(0) + '%'; if (msg) $('loadText').textContent = msg; },
   async step(p, msg) { this.progress(p, msg); await new Promise((r) => setTimeout(r, 16)); },
@@ -131,7 +131,11 @@ const Engine = {
     this.warmup();
     await this.step(0.97, '合成音效');
     Sound.init();
-    const wake = () => { Sound.resume(); Sound.startAmbience(); };
+    const wake = () => {
+      Sound.resume();
+      Sound.startAmbience();
+      if (Sound.setAmbience) Sound.setAmbience((this.map && this.map.weather) || 'dust');
+    };
     window.addEventListener('pointerdown', wake); window.addEventListener('keydown', wake);
     await this.step(1, '完成');
     this.bindUI();
@@ -141,14 +145,27 @@ const Engine = {
     this.resize();
     $('loading').classList.add('hidden');
     $('menu').classList.remove('hidden');
-    $('verLabel').textContent = `v${VERSION} · 3 张 96m PBR 地图 · 16 款武器皮肤 · 128-Tick · Cloudflare DO 云端联机`;
-    const qMode = params.get('mode');
-    if (qMode === 'comp' || qMode === 'tdm' || qMode === 'range') {
+    $('verLabel').textContent = `v${VERSION} · 4 张 96m PBR 地图 · 17 款武器 × 9 款皮肤 · 5 大模式 · Cloudflare DO 云端联机`;
+    const qMode = (params.get('mode') || '').trim().toLowerCase();
+    if (qMode === 'comp' || qMode === 'tdm' || qMode === 'range' || qMode === 'armsrace' || qMode === 'retake') {
       this.opts.mode = qMode;
       document.querySelectorAll('#modeCards .card').forEach((c) => {
         c.classList.toggle('active', c.dataset.mode === qMode);
       });
     }
+    const qLowGrav = params.get('lowgrav');
+    if (qLowGrav === '1' || qLowGrav === 'true') {
+      this.opts.lowGrav = true;
+      S.lowGrav = true;
+      Settings.save();
+    } else if (qLowGrav === '0' || qLowGrav === 'false') {
+      this.opts.lowGrav = false;
+      S.lowGrav = false;
+      Settings.save();
+    } else {
+      this.opts.lowGrav = !!S.lowGrav;
+    }
+    this.syncGravUI();
     document.querySelectorAll('#optMap b').forEach((b) => {
       b.classList.toggle('on', b.dataset.v === this.opts.map);
     });
@@ -215,6 +232,7 @@ const Engine = {
       Effects.setFog(this.scene.fog.color, this.scene.fog.density);
     }
     Effects.setWeather(weather || 'dust');
+    if (typeof Sound !== 'undefined' && Sound.setAmbience) Sound.setAmbience(weather || 'dust');
     this.bakeEnv();
     if (this.final) {
       const th = L.tintHi || [0.014, 0.006, -0.012], tl = L.tintLo || [-0.01, 0, 0.014];
@@ -325,8 +343,11 @@ const Engine = {
   },
   warmup() {
     // 预构建模型 & 编译着色器，避免首帧卡顿
-    const list = (typeof ARMORY_WEAPONS !== 'undefined' ? ARMORY_WEAPONS : ['ak47', 'm4a4', 'awp', 'deagle', 'usp', 'glock', 'mp9', 'knife', 'butterfly']).concat(['he', 'flash', 'smoke', 'c4']);
-    for (const id of list) { this.vm.model(id); Models.thirdPerson(id); }
+    const list = (typeof ARMORY_WEAPONS !== 'undefined' ? ARMORY_WEAPONS : ['ak47', 'm4a4', 'famas', 'awp', 'deagle', 'usp', 'glock', 'mp9', 'knife', 'butterfly']).concat(['he', 'flash', 'smoke', 'molotov', 'c4']);
+    for (const id of list) {
+      if (typeof WEAPONS !== 'undefined' && !WEAPONS[id]) continue;
+      this.vm.model(id); Models.thirdPerson(id);
+    }
     const tmp = [new Models.Humanoid('CT'), new Models.Humanoid('T')];
     tmp.forEach((h, i) => { h.setWeapon(i ? 'ak47' : 'm4a4'); h.root.position.set(0, -50, 0); this.scene.add(h.root); });
     for (const id in this.vm.models) { this.vm.root.add(this.vm.models[id].group); }
@@ -347,6 +368,7 @@ const Engine = {
       if (this.armory && this.armory.open) this.closeArmory();
       const opts = Object.assign({}, this.opts, net ? net.opts : { name: Lobby.myName() });
       await this.ensureMap(opts.map || 'dust', true);
+      if (Sound.setAmbience) Sound.setAmbience((this.map && this.map.weather) || 'dust');
       if (net) { opts.net = net.ctx; $('lobby').classList.add('hidden'); }
       this.game = new Game(this, opts);
       HUD.bind(this.game);
@@ -512,7 +534,11 @@ const Engine = {
   },
   rebuildArmoryModel() {
     const A = this.armory;
-    if (A.model) A.pivot.remove(A.model);
+    if (A.model) {
+      if (typeof Models !== 'undefined' && Models.disposeObject) Models.disposeObject(A.model);
+      A.pivot.remove(A.model);
+      A.model = null;
+    }
     const m = Models.weapon(A.wid, A.skinId);
     m.group.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.frustumCulled = false; } });
     // 将武器居中到旋转枢轴中心
@@ -534,6 +560,12 @@ const Engine = {
     b.textContent = `${sk.name} · ${sk.rarityLabel}`;
     b.style.borderColor = sk.color;
     b.style.color = sk.id === 'default' ? '#d8d2c6' : sk.color;
+    const stEl = $('armStatTrak');
+    if (stEl) {
+      const st = (typeof StatTrak !== 'undefined' && StatTrak.get) ? StatTrak.get(A.wid) : 0;
+      stEl.classList.toggle('hidden', !(st > 0));
+      if (st > 0) stEl.textContent = `★ ${st} 杀`;
+    }
     $('btnArmSetKnife').classList.toggle('hidden', !(def && def.type === 'knife'));
   },
   updateArmory(dt) {
@@ -557,7 +589,9 @@ const Engine = {
     const wEl = $('armWeapons');
     wEl.innerHTML = ARMORY_WEAPONS.filter(matchCat).map((id) => {
       const d = WEAPONS[id], sk = Skins.BY_ID[Skins.forWeapon(id)] || Skins.LIST[0];
-      return `<div class="arm-wep${id === A.wid ? ' on' : ''}" data-awep="${id}"><div><div>${d.name}</div><div class="meta">${d.type === 'knife' ? (Settings.data.knife === id ? '当前默认近战' : '近战刀具') : '$' + d.price}</div></div><i class="dot" style="background:${sk.swatch}" title="${sk.name}"></i></div>`;
+      const st = (typeof StatTrak !== 'undefined' && StatTrak.get) ? StatTrak.get(id) : 0;
+      const stHtml = st > 0 ? `<span class="st-cnt">★ ${st} 杀</span>` : '';
+      return `<div class="arm-wep${id === A.wid ? ' on' : ''}" data-awep="${id}"><div><div>${d.name}</div><div class="meta">${d.type === 'knife' ? (Settings.data.knife === id ? '当前默认近战' : '近战刀具') : '$' + d.price}${stHtml}</div></div><i class="dot" style="background:${sk.swatch}" title="${sk.name}"></i></div>`;
     }).join('');
     const sEl = $('armSkins');
     sEl.innerHTML = Skins.LIST.map((s) => `<button type="button" class="arm-skin${s.id === A.skinId ? ' on' : ''}" data-askin="${s.id}"><div class="sw" style="background:${s.swatch}"></div><div class="sn">${s.name}</div><div class="sr">${s.rarityLabel}</div></button>`).join('');
@@ -605,6 +639,17 @@ const Engine = {
         Settings.data.map = b.dataset.v; Settings.save();
         Sound.init(); Sound.play('ui_click');
         if (!self.game) await self.ensureMap(b.dataset.v, false);
+      }));
+    }
+    const gravSeg = $('optGrav');
+    if (gravSeg) {
+      gravSeg.querySelectorAll('b').forEach((b) => b.addEventListener('click', () => {
+        const on = b.dataset.v === '1';
+        self.opts.lowGrav = on;
+        Settings.data.lowGrav = on;
+        Settings.save();
+        self.syncGravUI();
+        Sound.init(); Sound.play('ui_click');
       }));
     }
     document.querySelectorAll('#modeCards .card').forEach((c) => c.addEventListener('click', () => {
@@ -677,7 +722,7 @@ const Engine = {
         self.renderArmoryUI();
         Sound.play('ui_buy', { vol: 0.55 });
         const sk = Skins.BY_ID[self.armory.skinId];
-        $('armStatus').textContent = `已将「${sk.name}」套用至全部 16 款武器`;
+        $('armStatus').textContent = `已将「${sk.name}」套用至全部 ${ARMORY_WEAPONS.length} 款武器`;
         if (typeof Lobby !== 'undefined' && Lobby.conn && Lobby.role === 'guest') {
           Lobby.conn.send({ t: 'info', knife: Settings.data.knife, skins: Settings.data.skins });
         }
@@ -793,6 +838,8 @@ const Engine = {
       { k: 'slide', l: '滑铲', t: 'bool', d: '接近满速奔跑时按 C/Ctrl 触发滑铲' },
       { k: 'toggleCrouch', l: '切换式下蹲', t: 'bool' },
       { k: 'kbLock', l: '全屏 + 键盘锁定', t: 'bool', d: '开局自动全屏并接管 Ctrl+W / Ctrl+D 等浏览器快捷键，避免 Ctrl 下蹲时误触导致退出鼠标锁定。长按 Esc 退出全屏' },
+      { k: 'specFirstPerson', l: '默认第一人称观战', t: 'bool', d: '阵亡观战队友时默认使用第一人称视角（观战中按 V 或空格可随时切换 1P/3P）' },
+      { k: 'lowGrav', l: '火星低重力模式 (0.48g)', t: 'bool', d: '单机/训练启用火星 0.48g 低重力与更高坠落安全高度（与主菜单重力环境开关同步）' },
       { k: 'knife', l: '近战武器', t: 'select', o: [['butterfly', '蝴蝶刀'], ['karambit', '爪子刀'], ['knife', '默认匕首']], d: '下次出生生效；按 F 检视' },
     ],
     cross: [
@@ -871,8 +918,19 @@ const Engine = {
     if (S.crossOutline) { g.fillStyle = '#000'; for (const r of rects) g.fillRect(r[0] - 1, r[1] - 1, r[2] + 2, r[3] + 2); }
     g.fillStyle = S.crossColor; for (const r of rects) g.fillRect(...r);
   },
+  syncGravUI() {
+    const on = !!this.opts.lowGrav;
+    const el = $('optGrav');
+    if (el) el.querySelectorAll('b').forEach((b) => b.classList.toggle('on', (b.dataset.v === '1') === on));
+  },
   applySettings(rebuild) {
     Settings.save();
+    this.opts.lowGrav = !!Settings.data.lowGrav;
+    this.syncGravUI();
+    if (this.game) {
+      this.game.specFirstPerson = Settings.data.specFirstPerson !== false;
+      if (!this.game.net && this.game.opts) this.game.opts.lowGrav = !!Settings.data.lowGrav;
+    }
     Sound.setVolume(Settings.data.volume);
     this.vm.setFov(Settings.data.vmFov, innerWidth / innerHeight);
     if (this.final && Settings.data.sharpness != null) this.final.uniforms.sharpness.value = Settings.data.sharpness;

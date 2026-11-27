@@ -16,12 +16,16 @@ import {
   ArrowUpRight,
   Award,
   Blocks,
+  ChevronDown,
   Crosshair,
   Disc,
   Flag,
+  Flame,
   Gamepad2,
   Grid2x2,
   Keyboard,
+  Layers,
+  Orbit,
   Radio,
   RefreshCw,
   Shield,
@@ -37,6 +41,7 @@ import {
 import type {
   ArenaGameMode,
   ArenaLobbySummary,
+  ArenaMapId,
   ArenaMatchRecord,
   ArenaMatchesResponse,
   ArenaRoomsListResponse,
@@ -103,13 +108,39 @@ const GAME_ACCENTS: Record<ArcadeGameId, GameAccentSpec> = {
 };
 
 function formatArenaModeLabel(mode: ArenaGameMode): string {
-  return mode === 'deathmatch' ? '团队死斗' : '5v5 爆破竞技';
+  switch (mode) {
+    case 'deathmatch':
+      return '团队死斗';
+    case 'armsrace':
+      return '军备竞赛';
+    case 'retake':
+      return '残局回防';
+    default:
+      return '5v5 爆破竞技';
+  }
+}
+
+function formatArenaMapLabel(mapId: ArenaMapId | undefined): string {
+  switch (mapId) {
+    case 'frost':
+      return '极地科研站';
+    case 'harbor':
+      return '黄昏货运港';
+    case 'mars':
+      return '赤岩前哨';
+    default:
+      return '炽沙小镇';
+  }
 }
 
 function formatArenaWinnerLabel(winner: ArenaMatchRecord['winnerTeam']): string {
   if (winner === 'red') return 'T 方胜';
   if (winner === 'blue') return 'CT 方胜';
   return '平局';
+}
+
+function isArenaLobbyLive(phase: ArenaLobbySummary['phase']): boolean {
+  return phase === 'live' || phase === 'freeze' || phase === 'round_over';
 }
 
 function resolveActiveGame(search: string): ArcadeGameId {
@@ -151,8 +182,16 @@ export default function ArcadePage() {
   const [arenaMatchesLoading, setArenaMatchesLoading] = useState(true);
   const [arenaRefreshing, setArenaRefreshing] = useState(false);
   const [arenaMatchesExpanded, setArenaMatchesExpanded] = useState(false);
+  const [expandedMatchIds, setExpandedMatchIds] = useState<Record<string, boolean>>({});
   const [arenaRoomInput, setArenaRoomInput] = useState('');
   const [arenaRoomError, setArenaRoomError] = useState('');
+
+  const toggleMatchScoreboard = (matchId: string) => {
+    setExpandedMatchIds((prev) => ({
+      ...prev,
+      [matchId]: !prev[matchId],
+    }));
+  };
 
   const loadArenaTelemetry = useCallback(async (silent = false) => {
     if (silent) {
@@ -547,10 +586,20 @@ export default function ArcadePage() {
                   <h2 className="m-0 text-[18px] font-medium text-ink sm:text-[21px]">
                     3D 战术射击 · 沙暴行动 SANDSTORM
                   </h2>
+                  <span
+                    className="tabular-nums-mono rounded-full border px-2.5 py-0.5 text-[11px] font-medium"
+                    style={{
+                      backgroundColor: 'color-mix(in srgb, #c96a48 12%, transparent)',
+                      borderColor: 'color-mix(in srgb, #c96a48 34%, transparent)',
+                      color: '#c96a48',
+                    }}
+                  >
+                    v3.0 · 火星主场
+                  </span>
                 </div>
 
-                <p className="font-editorial-serif mt-3 mb-0 max-w-[780px] text-[14.5px] leading-relaxed text-ink-muted">
-                  三大 96m×96m 程序化 PBR 战术战场（炽沙小镇 / 极地科研站 / 黄昏货运港），烘焙 AO 与天候光影，收录 AK-47、M4A1-S、Nova 霰弹枪、SSG 08 鸟狙、AWP、蝴蝶刀与爪子刀等 20 款武器装备、3D 军械库 9 款程序化皮肤、C4 拆包、F1/F2 快购及 128-Tick 急停压枪与爆发滑铲；支持单人 5v5 战术 AI 及 Cloudflare Durable Objects 6 位房号 64Hz 云端联机。
+                <p className="font-editorial-serif mt-3 mb-0 max-w-[820px] text-[14.5px] leading-relaxed text-ink-muted">
+                  四大 96m×96m 程序化 PBR 战术战场（炽沙小镇 / 极地科研站 / 黄昏货运港 / 火星主场「赤岩前哨」），支持火星 0.48g 低重力与天候声景；收录 FAMAS、AK-47、M4A1-S、AWP 与蝴蝶/爪子刀等 17 款主战武器 × 9 款 3D 武器皮肤、StatTrak 生涯击杀计数、燃烧弹（烟雾弹可灭火）、Z 键 3D 战术标点与第一人称观战；畅玩 5v5 爆破竞技、团队死斗、军备竞赛、残局回防与靶场 2.0，并支持 Cloudflare Durable Objects 6 位房号 64Hz 云端联机。
                 </p>
               </div>
 
@@ -583,6 +632,19 @@ export default function ArcadePage() {
                   <span>进入沙暴行动</span>
                 </a>
                 <a
+                  href="/arcade/arena?map=mars&autostart=1"
+                  onClick={handleSpaLink('/arcade/arena?map=mars&autostart=1')}
+                  className="pill-cta-secondary min-h-[40px] px-4 text-[13px]"
+                  style={{
+                    borderColor: 'color-mix(in srgb, #c96a48 42%, var(--color-hairline))',
+                    backgroundColor: 'color-mix(in srgb, #c96a48 10%, var(--color-surface))',
+                    color: '#c96a48',
+                  }}
+                >
+                  <Orbit className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  <span>火星主场 · 赤岩前哨</span>
+                </a>
+                <a
                   href="/arcade/arena?mode=comp&autostart=1"
                   onClick={handleSpaLink('/arcade/arena?mode=comp&autostart=1')}
                   className="pill-cta-secondary min-h-[40px] px-4 text-[13px]"
@@ -597,6 +659,22 @@ export default function ArcadePage() {
                 >
                   <Swords className="h-4 w-4 shrink-0" aria-hidden="true" />
                   <span>团队死斗</span>
+                </a>
+                <a
+                  href="/arcade/arena?mode=armsrace&autostart=1"
+                  onClick={handleSpaLink('/arcade/arena?mode=armsrace&autostart=1')}
+                  className="pill-cta-secondary min-h-[40px] px-4 text-[13px]"
+                >
+                  <Layers className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  <span>军备竞赛</span>
+                </a>
+                <a
+                  href="/arcade/arena?mode=retake&autostart=1"
+                  onClick={handleSpaLink('/arcade/arena?mode=retake&autostart=1')}
+                  className="pill-cta-secondary min-h-[40px] px-4 text-[13px]"
+                >
+                  <Flame className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  <span>残局回防</span>
                 </a>
                 <a
                   href="/arcade/arena?mode=range&autostart=1"
@@ -652,10 +730,18 @@ export default function ArcadePage() {
                     key={room.code}
                     href={`/arcade/arena?room=${encodeURIComponent(room.code)}`}
                     onClick={handleSpaLink(`/arcade/arena?room=${encodeURIComponent(room.code)}`)}
-                    className="inline-flex min-h-[30px] items-center gap-2 rounded-full border border-hairline bg-surface px-3 text-[12px] text-ink no-underline transition-colors hover:border-hairline-strong hover:bg-surface-hover"
+                    className="inline-flex min-h-[30px] items-center gap-2 rounded-full border border-hairline bg-surface px-3 py-1 text-[12px] text-ink no-underline transition-colors hover:border-hairline-strong hover:bg-surface-hover"
                   >
                     <span className="tabular-nums-mono font-medium text-accent">{room.code}</span>
-                    <span className="max-w-[140px] truncate">{room.name}</span>
+                    <span className="rounded-full border border-hairline bg-paper px-1.5 py-0 text-[10.5px] text-ink-muted">
+                      {formatArenaMapLabel(room.mapId)}
+                    </span>
+                    <span className="max-w-[130px] truncate">{room.name}</span>
+                    {isArenaLobbyLive(room.phase) && (
+                      <span className="tabular-nums-mono rounded-full bg-paper px-1.5 py-0 text-[10.5px] font-medium text-postmark">
+                        T {room.scoreRed}:{room.scoreBlue} CT
+                      </span>
+                    )}
                     <span className="tabular-nums-mono text-[11px] text-ink-muted">
                       {room.humanCount}/{room.maxHumans}
                     </span>
@@ -666,11 +752,11 @@ export default function ArcadePage() {
 
             <div className="mt-4 flex flex-wrap gap-2">
               {[
-                '3 张 96m×96m PBR 战术地图',
-                '16 款主战武器 + 3D 武器皮肤工坊',
-                '128-Tick 急停压枪 + 滚轮跳 + 爆发滑铲',
-                '5v5 爆破竞技 · 死斗 · 靶场 · F1 快购',
-                'Durable Objects 6 位房号云端联机',
+                '4 张 96m×96m PBR 地图 · 含火星「赤岩前哨」',
+                '17 款主战武器 × 9 款 3D 皮肤 · StatTrak',
+                '燃烧弹与烟雾灭火 · Z 键 3D 战术标点',
+                '爆破 · 死斗 · 军备竞赛 · 残局回防 · 靶场 2.0',
+                'Durable Objects 6 位房号 64Hz 云端联机',
               ].map((tag) => (
                 <span
                   key={tag}
@@ -714,55 +800,164 @@ export default function ArcadePage() {
                 <p className="mt-3 mb-0 text-[13px] text-ink-muted">正在读取近期沙暴行动战报……</p>
               ) : arenaMatches.length === 0 ? (
                 <div className="mt-3 rounded-[16px] border border-hairline bg-surface px-4 py-4 text-[13px] leading-relaxed text-ink-muted">
-                  完成一局「沙暴行动」5v5 爆破竞技或团队死斗后，比分、参战人数与本场 MVP 将自动归档于此。
+                  完成一局「沙暴行动」爆破竞技、团队死斗、军备竞赛或残局回防后，地图、比分、全员战绩表与本场 MVP 将自动归档于此。
                 </div>
               ) : (
                 <>
                   <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
                     {(arenaMatchesExpanded ? arenaMatches : arenaMatches.slice(0, 4)).map(
-                      (match) => (
-                        <article
-                          key={match.id}
-                          className="rounded-[16px] border border-hairline bg-surface p-3.5 sm:p-4"
-                        >
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <span className="rounded-full border border-hairline bg-paper px-2 py-0.5 text-[11px] text-ink">
-                                {match.source === 'online' ? '云端联机' : '单人 AI'}
-                              </span>
-                              <span className="tabular-nums-mono text-[12px] font-medium text-accent">
-                                {match.roomCode}
-                              </span>
-                              <span className="text-[12px] text-ink-muted">
-                                {formatArenaModeLabel(match.mode)}
-                              </span>
-                            </div>
-                            <span className="text-[12px] font-medium text-postmark">
-                              {formatArenaWinnerLabel(match.winnerTeam)}
-                            </span>
-                          </div>
+                      (match) => {
+                        const isDetailOpen = Boolean(expandedMatchIds[match.id]);
+                        const sortedPlayers = isDetailOpen
+                          ? [...match.players].sort((a, b) => {
+                              if (a.team !== b.team) return a.team === 'red' ? -1 : 1;
+                              return b.kills - a.kills || b.damage - a.damage || b.score - a.score;
+                            })
+                          : [];
 
-                          <div className="mt-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                            <div className="tabular-nums-mono text-[15px] font-semibold text-ink">
-                              T {match.scoreRed} : {match.scoreBlue} CT
+                        return (
+                          <article
+                            key={match.id}
+                            className="rounded-[16px] border border-hairline bg-surface p-3.5 sm:p-4"
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="rounded-full border border-hairline bg-paper px-2 py-0.5 text-[11px] text-ink">
+                                  {match.source === 'online' ? '云端联机' : '单人 AI'}
+                                </span>
+                                <span
+                                  className="rounded-full border border-hairline bg-paper px-2 py-0.5 text-[11px] font-medium"
+                                  style={
+                                    match.mapId === 'mars'
+                                      ? {
+                                          borderColor: 'color-mix(in srgb, #c96a48 38%, transparent)',
+                                          color: '#c96a48',
+                                        }
+                                      : undefined
+                                  }
+                                >
+                                  {formatArenaMapLabel(match.mapId)}
+                                </span>
+                                <span className="tabular-nums-mono text-[12px] font-medium text-accent">
+                                  {match.roomCode}
+                                </span>
+                                <span className="text-[12px] text-ink-muted">
+                                  {formatArenaModeLabel(match.mode)}
+                                </span>
+                              </div>
+                              <span className="text-[12px] font-medium text-postmark">
+                                {formatArenaWinnerLabel(match.winnerTeam)}
+                              </span>
                             </div>
-                            <div className="tabular-nums-mono text-[12px] text-ink-muted">
-                              <span className="font-medium text-ink">MVP {match.mvpName}</span>
-                              {' · '}
-                              {match.mvpKills} 杀 / {match.mvpDeaths} 死 · 爆头{' '}
-                              {match.mvpHeadshots}
-                            </div>
-                          </div>
 
-                          <div className="tabular-nums-mono mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-hairline pt-2 text-[11.5px] text-ink-muted">
-                            <span>
-                              {match.playerCount} 真人 · {match.botCount} Bot
-                            </span>
-                            <span>{formatArcadeDuration(match.durationMs)}</span>
-                            <span>{formatArcadeTimestamp(match.createdAt, true)}</span>
-                          </div>
-                        </article>
-                      ),
+                            <div className="mt-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                              <div className="tabular-nums-mono text-[15px] font-semibold text-ink">
+                                T {match.scoreRed} : {match.scoreBlue} CT
+                              </div>
+                              <div className="tabular-nums-mono text-[12px] text-ink-muted">
+                                <span className="font-medium text-ink">MVP {match.mvpName}</span>
+                                {' · '}
+                                {match.mvpKills} 杀 / {match.mvpDeaths} 死 · 爆头{' '}
+                                {match.mvpHeadshots}
+                              </div>
+                            </div>
+
+                            <div className="tabular-nums-mono mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-hairline pt-2 text-[11.5px] text-ink-muted">
+                              <span>
+                                {match.playerCount} 真人 · {match.botCount} Bot
+                              </span>
+                              <span>{formatArcadeDuration(match.durationMs)}</span>
+                              <span>{formatArcadeTimestamp(match.createdAt, true)}</span>
+                              {match.players.length > 0 && (
+                                <button
+                                  type="button"
+                                  aria-expanded={isDetailOpen}
+                                  aria-controls={`arena-match-board-${match.id}`}
+                                  onClick={() => toggleMatchScoreboard(match.id)}
+                                  className="ml-auto inline-flex min-h-[26px] cursor-pointer items-center gap-1 rounded-full border border-hairline bg-paper px-2.5 text-[11px] font-medium text-ink transition-colors hover:border-hairline-strong hover:bg-surface-hover"
+                                >
+                                  <span>
+                                    {isDetailOpen ? '收起战绩' : `全员战绩 (${match.players.length})`}
+                                  </span>
+                                  <ChevronDown
+                                    className={`h-3 w-3 transition-transform duration-150 ${
+                                      isDetailOpen ? 'rotate-180' : ''
+                                    }`}
+                                    aria-hidden="true"
+                                  />
+                                </button>
+                              )}
+                            </div>
+
+                            {isDetailOpen && sortedPlayers.length > 0 && (
+                              <div
+                                id={`arena-match-board-${match.id}`}
+                                className="mt-2.5 overflow-x-auto rounded-[12px] border border-hairline bg-paper/80"
+                              >
+                                <table className="w-full border-collapse text-left text-[11.5px]">
+                                  <thead>
+                                    <tr className="border-b border-hairline text-[10.5px] text-ink-muted">
+                                      <th className="py-1.5 pr-2 pl-2.5 font-medium">阵营 / 玩家</th>
+                                      <th className="px-2 py-1.5 text-right font-medium">K/D/A</th>
+                                      <th className="px-2 py-1.5 text-right font-medium">爆头</th>
+                                      <th className="px-2 py-1.5 text-right font-medium">伤害</th>
+                                      <th className="py-1.5 pr-2.5 pl-2 text-right font-medium">积分</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-hairline/70">
+                                    {sortedPlayers.map((player) => (
+                                      <tr key={`${match.id}-${player.id}`}>
+                                        <td className="py-1.5 pr-2 pl-2.5 whitespace-nowrap">
+                                          <div className="flex items-center gap-1.5">
+                                            <span
+                                              className="inline-flex w-6 shrink-0 items-center justify-center rounded px-1 py-0 text-[10px] font-semibold"
+                                              style={
+                                                player.team === 'red'
+                                                  ? {
+                                                      backgroundColor:
+                                                        'color-mix(in srgb, #c96a48 16%, transparent)',
+                                                      color: '#c96a48',
+                                                    }
+                                                  : {
+                                                      backgroundColor:
+                                                        'color-mix(in srgb, #4f8ce8 16%, transparent)',
+                                                      color: '#4f8ce8',
+                                                    }
+                                              }
+                                            >
+                                              {player.team === 'red' ? 'T' : 'CT'}
+                                            </span>
+                                            <span className="max-w-[120px] truncate font-medium text-ink">
+                                              {player.name}
+                                            </span>
+                                            {player.isBot && (
+                                              <span className="rounded bg-surface px-1 text-[9.5px] text-ink-muted">
+                                                AI
+                                              </span>
+                                            )}
+                                          </div>
+                                        </td>
+                                        <td className="tabular-nums-mono px-2 py-1.5 text-right whitespace-nowrap text-ink">
+                                          {player.kills}/{player.deaths}/{player.assists}
+                                        </td>
+                                        <td className="tabular-nums-mono px-2 py-1.5 text-right whitespace-nowrap text-ink-muted">
+                                          {player.headshots}
+                                        </td>
+                                        <td className="tabular-nums-mono px-2 py-1.5 text-right whitespace-nowrap text-ink-muted">
+                                          {player.damage}
+                                        </td>
+                                        <td className="tabular-nums-mono py-1.5 pr-2.5 pl-2 text-right font-medium whitespace-nowrap text-ink">
+                                          {player.score}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </article>
+                        );
+                      },
                     )}
                   </div>
 

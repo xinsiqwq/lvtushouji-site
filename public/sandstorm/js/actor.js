@@ -35,8 +35,11 @@ class Actor {
     this.stamina = 0; this.velMod = 1; this.landInacc = 0; this.stepOffset = 0; this.stepDist = 0;
     this.hp = 100; this.armor = 0; this.helmet = false; this.alive = false;
     this.money = 800; this.kills = 0; this.deaths = 0; this.assists = 0; this.headshots = 0; this.damageDealt = 0; this.mvp = 0; this.roundKills = 0; this.damageBy = new Map();
+    this.dmgTo = new Map(); this.dmgFrom = new Map();
+    this.arLevel = 0; this.arProgress = 0; this.overrideSkin = null;
+    this.burstQueue = 0; this.burstTimer = 0;
     const initKnife = this.isPlayer ? normKnife(Settings.data.knife) : this.remote ? normKnife(o.knife) : pick(['knife', 'butterfly', 'karambit']);
-    this.inv = { primary: null, secondary: null, knife: new WeaponInst(initKnife), nades: { he: 0, flash: 0, smoke: 0 }, c4: false, defuser: false };
+    this.inv = { primary: null, secondary: null, knife: new WeaponInst(initKnife), nades: { he: 0, flash: 0, smoke: 0, molotov: 0 }, c4: false, defuser: false };
     this.slot = 'knife'; this.lastSlot = 'knife'; this.weapon = this.inv.knife; this.nadeId = 'he';
     this.drawEnd = 0; this.nextFire = 0; this.reloadEnd = 0; this.reloading = false;
     this.recoilIdx = 0; this.lastShot = -9; this.fireInacc = 0; this.recoilP = 0; this.recoilY = 0;
@@ -67,8 +70,12 @@ class Actor {
 
   // ================= 出生 / 装备 =================
   skinOf(wid) {
+    if (this.overrideSkin && WEAPONS[wid] && WEAPONS[wid].type === 'knife') {
+      return typeof Skins !== 'undefined' ? Skins.normalize(this.overrideSkin) : this.overrideSkin;
+    }
     if (this.isPlayer && typeof Skins !== 'undefined') return Skins.forWeapon(wid);
     if (this.skins && this.skins[wid] && typeof Skins !== 'undefined') return Skins.normalize(this.skins[wid]);
+    if (this.model && this.model.weapon && this.model.weapon.id === wid && this.model.weapon.skinId) return this.model.weapon.skinId;
     return 'default';
   }
   spawnAt(p, yaw) {
@@ -79,7 +86,8 @@ class Actor {
     this.recoilP = this.recoilY = this.punchP = this.punchY = this.aimPunchP = this.aimPunchY = 0;
     this.scoped = 0; this.rezoom = 0; this.reloading = false; this.planting = false; this.defusing = false;
     this.nadeHold = 0; this.throwAt = 0; this.blind = 0; this.onGround = true;
-    this.damageBy.clear(); this.lastAttacker = null; this.roundKills = 0;
+    this.damageBy.clear(); this.dmgTo.clear(); this.dmgFrom.clear(); this.lastAttacker = null; this.roundKills = 0;
+    this.burstQueue = 0; this.burstTimer = 0;
     this.cmd = newCmd();
     this.spawnProtect = this.game.mode && this.game.mode.id === 'tdm' ? 2.0 : 0;
     if (this.model) { this.game.resetModel(this); }
@@ -89,13 +97,17 @@ class Actor {
   }
   giveWeapon(id) {
     const def = WEAPONS[id];
-    if (def.type === 'grenade') { if (this.inv.nades[id] < def.max) this.inv.nades[id]++; return; }
+    if (def.type === 'grenade') {
+      const cur = this.inv.nades[id] || 0;
+      if (cur < def.max) this.inv.nades[id] = cur + 1;
+      return;
+    }
     const w = new WeaponInst(id);
     if (def.slot === 1) { this.inv.primary = w; this.switchTo('primary'); }
     else if (def.slot === 2) { this.inv.secondary = w; this.switchTo('secondary'); }
   }
   stripForNewGame() {
-    this.inv.primary = null; this.inv.secondary = null; this.inv.nades = { he: 0, flash: 0, smoke: 0 };
+    this.inv.primary = null; this.inv.secondary = null; this.inv.nades = { he: 0, flash: 0, smoke: 0, molotov: 0 };
     this.inv.c4 = false; this.inv.defuser = false; this.armor = 0; this.helmet = false;
   }
 
@@ -124,6 +136,7 @@ class Actor {
     if (this.slot !== slot) this.lastSlot = this.slot;
     this.slot = slot; this.weapon = w;
     this.reloading = false; this.scoped = 0; this.rezoom = 0; this.nadeHold = 0; this.throwAt = 0; this.planting = false;
+    this.burstQueue = 0; this.burstTimer = 0;
     const now = this.game.time;
     this.drawEnd = now + (instant ? 0.05 : (w.def.draw || 1) * 0.85);
     this.nextFire = Math.max(this.nextFire, this.drawEnd);
@@ -192,6 +205,7 @@ class Actor {
       this.sound('jump', 0.3, 0.5);
     }
 
+    const gMul = (g.opts && g.opts.lowGrav) ? 0.48 : 1;
     if (this.onGround) {
       if (this.sliding) this.slideFriction(dt, wx, wz);
       else { this.friction(dt); this.accelerate(wx, wz, wish, PHYS.accelerate, dt); }
@@ -201,9 +215,9 @@ class Actor {
     } else {
       if (this.sliding) this.endSlide();
       this.airAccelerate(wx, wz, wish, dt);
-      this.vel.y -= PHYS.gravity * dt * 0.5;
+      this.vel.y -= PHYS.gravity * gMul * dt * 0.5;
       this.slideMove(dt);
-      this.vel.y -= PHYS.gravity * dt * 0.5;
+      this.vel.y -= PHYS.gravity * gMul * dt * 0.5;
     }
     this.categorize();
 
@@ -325,7 +339,9 @@ class Actor {
       this.sound('land', clamp(fs / 8, 0.2, 0.8), 0.6);
       if (fs > 4.5) Effects.landDust(this.pos, clamp(fs / 9, 0.3, 1));
     }
-    if (fsu > 580) this.game.applyDamage(this, null, Math.round((fsu - 580) * (100 / (1024 - 580))), 'fall', null, null);
+    const gMul = (this.game.opts && this.game.opts.lowGrav) ? 0.48 : 1;
+    const fallThresh = gMul < 1 ? 760 : 580;
+    if (fsu > fallThresh) this.game.applyDamage(this, null, Math.round((fsu - fallThresh) * (100 / (1024 - fallThresh))), 'fall', null, null);
   }
   updateDuck(dt, want) {
     const W = this.game.world, p = this.pos, hw = PHYS.hullHalf, dH = PHYS.standH - PHYS.crouchH;
@@ -482,13 +498,19 @@ class Actor {
     if (type === 'c4') return this.updateC4(dt);
     if (type === 'knife') return this.updateKnife();
     if (c.inspect && !this.reloading && now >= this.nextFire) { c.inspect = false; this.events.push({ t: 'inspect' }); }
-    const trigger = def.auto ? c.attack : c.attackPressed;
+    const trigger = w.burst ? c.attackPressed : (def.auto ? c.attack : c.attackPressed);
     // 霰弹枪逐发填装过程中开火可立即中断换弹并射击
     if (trigger && this.reloading && def.shellReload && w.mag > 0 && now >= this.nextFire && !g.noFire) {
       this.reloading = false;
     }
-    const autoEmpty = (this.isPlayer ? Settings.data.autoReload !== false : true) && w.mag === 0 && now >= this.nextFire && !trigger;
+    const autoEmpty = (this.isPlayer ? Settings.data.autoReload !== false : true) && w.mag === 0 && this.burstQueue === 0 && now >= this.nextFire && !trigger;
     if ((c.reload || (w.mag === 0 && c.attackPressed) || autoEmpty) && !this.reloading && w.mag < def.mag && (w.reserve > 0 || g.infiniteAmmo)) this.startReload();
+    if (def.burstMode && !this.reloading && c.attack2Pressed) {
+      w.burst = !w.burst;
+      this.burstQueue = 0;
+      this.burstTimer = 0;
+      this.sfx('burst_toggle', 0.45);
+    }
     const holdScope = this.isPlayer && Settings.data.scopeMode === 'hold';
     if (def.scope && !this.reloading) {
       if (holdScope) {
@@ -500,19 +522,48 @@ class Actor {
         this.sfx('dry', 0.25, 1.6);
       }
     }
-    const canFire = !this.reloading && now >= this.nextFire && this.sprintRecover <= 0 && !this.sprinting && !g.noFire;
+    // 三连发队列推进（0.055s 间隔）
+    if (this.burstQueue > 0) {
+      if (this.reloading || g.noFire || w.mag <= 0 || !w.burst) {
+        this.burstQueue = 0;
+        this.burstTimer = 0;
+      } else {
+        this.burstTimer -= dt;
+        if (this.burstTimer <= 0) {
+          this.burstQueue--;
+          this.fire(now, true);
+          if (this.burstQueue > 0 && w.mag > 0) {
+            this.burstTimer = 0.055;
+          } else {
+            this.burstQueue = 0;
+            this.burstTimer = 0;
+            this.nextFire = now + (def.id === 'glock' ? 0.34 : 0.28);
+          }
+        }
+      }
+    }
+    const canFire = !this.reloading && this.burstQueue === 0 && now >= this.nextFire && this.sprintRecover <= 0 && !this.sprinting && !g.noFire;
     if (trigger && canFire) {
-      if (w.mag > 0) this.fire(now);
-      else if (c.attackPressed) { this.sfx('dry', 0.5); this.nextFire = now + 0.2; }
+      if (w.mag > 0) {
+        if (w.burst) {
+          this.fire(now, true);
+          this.burstQueue = Math.min(2, w.mag);
+          if (this.burstQueue > 0) this.burstTimer = 0.055;
+          else this.nextFire = now + (def.id === 'glock' ? 0.34 : 0.28);
+        } else {
+          this.fire(now, false);
+        }
+      } else if (c.attackPressed) { this.sfx('dry', 0.5); this.nextFire = now + 0.2; }
     }
   }
 
-  fire(now) {
+  fire(now, isBurst) {
     const w = this.weapon, def = w.def, g = this.game;
     w.mag--;
     this.nextFire = now + def.cycle;
     this.lastShot = now;
-    const inacc = this.inaccuracy() / 1000;
+    const bMul = isBurst ? 0.72 : 1;
+    const inacc = (this.inaccuracy() / 1000) * bMul;
     const pat = patternAt(def, this.recoilIdx);
     const jit = this.recoilIdx > 1 ? 0.1 : 0;
     const bp = this.pitch + (pat[0] + rand(-jit, jit) * 0.5 + this.aimPunchP) * DEG;
@@ -526,7 +577,7 @@ class Actor {
       let sx, sy;
       if (i === 0) {
         const a1 = Math.random() * Math.PI * 2, r1 = Math.random() * inacc;
-        const a2 = Math.random() * Math.PI * 2, r2 = Math.random() * (def.spread / 1000);
+        const a2 = Math.random() * Math.PI * 2, r2 = Math.random() * ((def.spread / 1000) * bMul);
         sx = Math.cos(a1) * r1 + Math.cos(a2) * r2; sy = Math.sin(a1) * r1 + Math.sin(a2) * r2;
       } else {
         const ang = (i - 1) / (pellets - 1) * Math.PI * 2 + rand(-0.25, 0.25);
@@ -560,6 +611,7 @@ class Actor {
     this.reloading = true;
     this.reloadEnd = this.game.time + def.reload;
     this.scoped = 0; this.rezoom = 0;
+    this.burstQueue = 0; this.burstTimer = 0;
     this.events.push({ t: 'reload', dur: def.reload, empty: this.weapon.mag === 0, id: def.id });
     if (def.shellReload) {
       const mi = { vol: 0.55, ref: 2, roll: 1.5, delay: def.reload * 0.5, maxDist: 20, src: this.id };

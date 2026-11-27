@@ -8,6 +8,8 @@ const Sound = (() => {
   const B = {};            // name → [AudioBuffer...]
   let voices = 0;
   let windNode = null, windGain = null;
+  let ambKind = 'dust', activeAmbKind = null, ambStarted = false;
+  const AMB_GAIN = { dust: 0.16, snow: 0.15, embers: 0.17, mars: 0.16 };
   let tinnitusOsc = null, tinnitusGain = null;
   let muffle = null;       // 闪光/爆炸后的低通
 
@@ -93,6 +95,7 @@ const Sound = (() => {
   const SHOT = {
     ak: { dur: 1.3, crack: 0.9, crackHP: 2200, body: 1.0, bodyLP: 2500, bodyDecay: 0.055, mid: 0.5, midF: 620, midDecay: 0.11, thump: 0.95, f0: 140, f1: 46, thumpDecay: 0.09, tail: 0.24, tailLP: 800, tailDecay: 0.4, echo: 0.2, echoDelay: 0.11 },
     m4: { dur: 1.2, crack: 1.0, crackHP: 3000, body: 0.9, bodyLP: 3300, bodyDecay: 0.045, mid: 0.45, midF: 900, midDecay: 0.09, thump: 0.75, f0: 165, f1: 55, thumpDecay: 0.075, tail: 0.2, tailLP: 950, tailDecay: 0.34, echo: 0.17, echoDelay: 0.1 },
+    famas: { dur: 1.15, crack: 1.0, crackHP: 3350, body: 0.88, bodyLP: 3600, bodyDecay: 0.038, mid: 0.48, midF: 1020, midDecay: 0.08, thump: 0.70, f0: 178, f1: 58, thumpDecay: 0.068, tail: 0.19, tailLP: 1020, tailDecay: 0.30, echo: 0.16, echoDelay: 0.095 },
     galil: { dur: 1.25, crack: 0.95, crackHP: 2700, body: 0.95, bodyLP: 2900, bodyDecay: 0.05, mid: 0.5, midF: 780, midDecay: 0.1, thump: 0.85, f0: 155, f1: 52, thumpDecay: 0.08, tail: 0.22, tailLP: 900, tailDecay: 0.36, echo: 0.18, echoDelay: 0.1 },
     ssg08: { dur: 1.8, crack: 1.0, crackHP: 2400, body: 0.95, bodyLP: 2400, bodyDecay: 0.075, mid: 0.55, midF: 520, midDecay: 0.14, thump: 1.05, f0: 128, f1: 40, thumpDecay: 0.12, tail: 0.3, tailLP: 720, tailDecay: 0.58, echo: 0.25, echoDelay: 0.14 },
     nova: { dur: 1.65, crack: 0.95, crackHP: 1600, body: 1.2, bodyLP: 1850, bodyDecay: 0.085, mid: 0.65, midF: 360, midDecay: 0.15, thump: 1.35, f0: 105, f1: 32, thumpDecay: 0.14, tail: 0.32, tailLP: 580, tailDecay: 0.55, echo: 0.26, echoDelay: 0.14 },
@@ -260,15 +263,138 @@ const Sound = (() => {
     reg('round_lose', 1, () => chord([440, 392, 330], 0.2, 0.5));
     reg('heart', 1, () => { const o = new Float32Array(len(0.5)); mix(o, tone(0.15, 70, 42, 0.03), 0, 1, env(0.003, 0.05)); mix(o, tone(0.15, 62, 40, 0.03), 0.2, 0.7, env(0.003, 0.05)); return norm(o, 0.7); });
 
-    // 环境风声（可循环）
-    reg('wind', 1, () => {
+    // v3.0 武器/燃烧弹/标点/模式音效
+    reg('burst_toggle', 2, () => {
+      const o = new Float32Array(len(0.09));
+      mix(o, click(3400, 4.5, 0.003), 0, 1.1);
+      mix(o, click(1950, 3.5, 0.004), 0.018, 0.85);
+      mix(o, ring(0.06, [[4200, 0.28, 0.012]]), 0.018, 0.6);
+      return norm(o, 0.72);
+    });
+    reg('moly_break', 2, () => {
+      const o = new Float32Array(len(1.15));
+      // 玻璃碎裂高频叮当 + 脆响
+      mix(o, filt(white(len(0.08)), 'hp', 4200), 0, 1.5, env(0.0003, 0.022));
+      for (let k = 0; k < 7; k++) {
+        const f = rand(3200, 7800);
+        mix(o, ring(0.14, [[f, 0.5, 0.035], [f * 1.37, 0.3, 0.025]]), rand(0, 0.11), 0.55);
+      }
+      // 爆燃呼啸声
+      const nW = len(0.75);
+      const sw = sweepBP(nW, 240, 1450, 1.1);
+      mix(o, sw, 0.02, 2.2, (t) => (1 - Math.exp(-t / 0.035)) * Math.exp(-t / 0.24));
+      mix(o, tone(0.32, 165, 56, 0.07), 0.015, 0.9, env(0.008, 0.14));
+      mix(o, filt(white(len(0.9)), 'lp', 850), 0.04, 1.5, (t) => (1 - Math.exp(-t / 0.05)) * Math.exp(-t / 0.38));
+      return norm(o, 0.95);
+    });
+    reg('fire_crackle', 3, () => {
+      const n = len(0.95);
+      const o = filt(filt(white(n), 'lp', 680), 'hp', 90);
+      for (let i = 0; i < n; i++) {
+        const t = i / SR;
+        const e = Math.sin(Math.PI * i / n);
+        o[i] *= (0.35 + 0.25 * Math.sin(t * 17 + i * 0.0002)) * e;
+      }
+      for (let k = 0; k < 14; k++) {
+        mix(o, click(rand(2200, 5200), rand(2.2, 4.5), rand(0.002, 0.006), 0.025), rand(0.05, 0.86), rand(0.4, 1.1));
+      }
+      return norm(o, 0.72);
+    });
+    reg('fire_extinguish', 2, () => {
+      const n = len(1.45);
+      const o = new Float32Array(n);
+      mix(o, tone(0.2, 140, 58, 0.05), 0, 0.7, env(0.005, 0.08));
+      const hiss = filt(filt(white(n), 'hp', 1750), 'lp', 6800);
+      mix(o, hiss, 0.01, 1.5, (t) => (1 - Math.exp(-t / 0.025)) * Math.exp(-t / 0.48));
+      const sw = sweepBP(len(1.1), 4400, 1450, 1.3);
+      mix(o, sw, 0.02, 1.2, (t) => (1 - Math.exp(-t / 0.04)) * Math.exp(-t / 0.42));
+      return norm(o, 0.82);
+    });
+    reg('ping', 1, () => {
+      const o = new Float32Array(len(0.36));
+      mix(o, ring(0.18, [[1568, 0.9, 0.055], [3136, 0.25, 0.03]]), 0, 1, env(0.002, 0.09));
+      mix(o, ring(0.22, [[2093, 1.0, 0.075], [4186, 0.22, 0.035]]), 0.085, 1, env(0.002, 0.12));
+      return norm(o, 0.52);
+    });
+    reg('ping_danger', 1, () => {
+      const o = new Float32Array(len(0.44));
+      mix(o, click(3600, 3, 0.003), 0, 0.5);
+      mix(o, ring(0.16, [[988, 0.9, 0.05], [1480, 0.65, 0.045]]), 0, 1, env(0.001, 0.08));
+      mix(o, click(3800, 3, 0.003), 0.115, 0.5);
+      mix(o, ring(0.24, [[1175, 1.0, 0.07], [1760, 0.72, 0.06]]), 0.115, 1, env(0.001, 0.12));
+      return norm(o, 0.62);
+    });
+    reg('level_up', 1, () => chord([587.3, 740.0, 880.0, 1174.7], 0.065, 0.24));
+    reg('level_down', 1, () => {
+      const o = chord([392.0, 311.1, 246.9], 0.11, 0.22);
+      return norm(filt(o, 'lp', 1200), 0.52);
+    });
+    reg('challenge_tick', 1, () => {
+      const o = new Float32Array(len(0.12));
+      mix(o, click(3200, 4, 0.0025), 0, 0.55);
+      mix(o, ring(0.1, [[1320, 0.9, 0.026]]), 0, 1, env(0.001, 0.04));
+      return norm(o, 0.48);
+    });
+    reg('challenge_done', 1, () => chord([659.25, 880.0, 1046.5, 1318.5], 0.08, 0.30));
+
+    // 多地图程序化环境循环音（首尾平滑交叉淡化）
+    const makeLoop = (f, fadeSec = 1.0, peak = 0.5) => {
+      const x = Math.min(len(fadeSec), f.length >> 2);
+      for (let i = 0; i < x; i++) {
+        const k = i / x;
+        f[i] = f[i] * k + f[f.length - x + i] * (1 - k);
+      }
+      return norm(f.subarray(0, f.length - x), peak);
+    };
+    reg('amb_dust', 1, () => {
       const n = len(12); const o = new Float32Array(n); let b = 0;
       for (let i = 0; i < n; i++) { b = (b + (Math.random() * 2 - 1) * 0.02) * 0.998; o[i] = b; }
-      let f = filt(filt(o, 'lp', 650), 'hp', 40);
+      const f = filt(filt(o, 'lp', 650), 'hp', 40);
       for (let i = 0; i < n; i++) { const t = i / SR; f[i] *= 0.55 + 0.25 * Math.sin(t * 0.7) + 0.2 * Math.sin(t * 0.23 + 1.3); }
-      const x = len(1.0); // 首尾交叉淡化
-      for (let i = 0; i < x; i++) { const k = i / x; f[i] = f[i] * k + f[n - x + i] * (1 - k); }
-      return norm(f.subarray(0, n - x), 0.5);
+      return makeLoop(f, 1.0, 0.5);
+    });
+    B.wind = B.amb_dust;
+    reg('amb_snow', 1, () => {
+      const n = len(11);
+      const base = filt(filt(white(n), 'lp', 480), 'hp', 55);
+      const w1 = filt(white(n), 'bp', 940, 5.5);
+      const w2 = filt(white(n), 'bp', 1580, 6.5);
+      const f = new Float32Array(n);
+      for (let i = 0; i < n; i++) {
+        const t = i / SR;
+        const g1 = 0.45 + 0.4 * Math.sin(t * 0.58 + 0.4) + 0.15 * Math.sin(t * 1.31);
+        const g2 = 0.35 + 0.45 * Math.sin(t * 0.41 + 2.2);
+        f[i] = base[i] * (0.65 + 0.25 * Math.sin(t * 0.35)) + w1[i] * 1.15 * g1 + w2[i] * 0.72 * g2;
+      }
+      return makeLoop(f, 1.0, 0.48);
+    });
+    reg('amb_embers', 1, () => {
+      const n = len(12);
+      const surf = filt(filt(white(n), 'lp', 360), 'hp', 35);
+      const air = filt(white(n), 'bp', 780, 1.2);
+      const f = new Float32Array(n);
+      for (let i = 0; i < n; i++) {
+        const t = i / SR;
+        const wave = 0.52 + 0.38 * Math.sin(t * 0.85) + 0.1 * Math.sin(t * 0.31 + 1.1);
+        const drone = (Math.sin(2 * Math.PI * 62 * t) * 0.14 + Math.sin(2 * Math.PI * 124 * t) * 0.06) * (0.7 + 0.3 * Math.sin(t * 0.45));
+        f[i] = surf[i] * 1.5 * wave + air[i] * 0.24 * (0.6 + 0.4 * Math.sin(t * 0.5 + 1.8)) + drone;
+      }
+      return makeLoop(f, 1.0, 0.5);
+    });
+    reg('amb_mars', 1, () => {
+      const n = len(12);
+      const sub = filt(filt(white(n), 'lp', 220), 'hp', 38);
+      const res1 = filt(white(n), 'bp', 285, 6.0);
+      const res2 = filt(white(n), 'bp', 440, 7.2);
+      const hiss = filt(white(n), 'bp', 1240, 1.4);
+      const f = new Float32Array(n);
+      for (let i = 0; i < n; i++) {
+        const t = i / SR;
+        const swell = 0.5 + 0.35 * Math.sin(t * 0.52) + 0.15 * Math.sin(t * 1.17 + 0.8);
+        const eerie = 0.55 + 0.45 * Math.sin(t * 0.37 + 1.9);
+        f[i] = sub[i] * 1.1 * swell + res1[i] * 1.65 * eerie + res2[i] * 1.05 * (0.5 + 0.5 * Math.sin(t * 0.29 + 3.1)) + hiss[i] * 0.48 * swell;
+      }
+      return makeLoop(f, 1.0, 0.5);
     });
   }
 
@@ -353,13 +479,45 @@ const Sound = (() => {
       }
     },
 
+    setAmbience(weatherKind) {
+      const next = (weatherKind === 'snow' || weatherKind === 'embers' || weatherKind === 'mars') ? weatherKind : 'dust';
+      ambKind = next;
+      if (!ctx || !ambStarted) return;
+      if (windNode && activeAmbKind === next) return;
+      const list = B['amb_' + next] || B.amb_dust || B.wind;
+      if (!list || !list[0]) return;
+      const t = ctx.currentTime;
+      const hadPrev = !!(windNode && windGain);
+      if (hadPrev) {
+        const oldNode = windNode, oldGain = windGain;
+        try {
+          oldGain.gain.cancelScheduledValues(t);
+          oldGain.gain.setValueAtTime(Math.max(oldGain.gain.value, 0.0001), t);
+          oldGain.gain.setTargetAtTime(0.0001, t, 0.35);
+          oldNode.stop(t + 1.6);
+          oldNode.onended = () => { try { oldGain.disconnect(); } catch (e) { /* noop */ } };
+        } catch (e) { /* noop */ }
+      }
+      const nextNode = ctx.createBufferSource();
+      nextNode.buffer = list[0];
+      nextNode.loop = true;
+      const nextGain = ctx.createGain();
+      nextGain.gain.value = 0.0001;
+      nextNode.connect(nextGain);
+      nextGain.connect(master);
+      nextNode.start(t);
+      const target = AMB_GAIN[next] || 0.16;
+      nextGain.gain.setTargetAtTime(target, t, hadPrev ? 0.55 : 1.4);
+      windNode = nextNode;
+      windGain = nextGain;
+      activeAmbKind = next;
+    },
+
     startAmbience() {
-      if (!ctx || windNode) return;
-      windNode = ctx.createBufferSource(); windNode.buffer = B.wind[0]; windNode.loop = true;
-      windGain = ctx.createGain(); windGain.gain.value = 0.0;
-      windNode.connect(windGain); windGain.connect(master);
-      windNode.start();
-      windGain.gain.setTargetAtTime(0.16, ctx.currentTime, 1.5);
+      ambStarted = true;
+      if (!ctx) return;
+      if (windNode && activeAmbKind === ambKind) return;
+      api.setAmbience(ambKind);
     },
 
     // 闪光弹耳鸣 & 听觉闷响

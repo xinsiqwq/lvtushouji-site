@@ -37,6 +37,10 @@ const Models = (() => {
       bfBlade: S({ color: 0xd4d8dc, roughness: 0.13, metalness: 1.0, envMapIntensity: 1.1 }),
       bfHandle: S(Object.assign({ color: 0x2b2d31, metalness: 0.8, envMapIntensity: 0.6 }, metal, { roughness: 0.85 })),
       bfGroove: S({ color: 0x5c6066, roughness: 0.35, metalness: 1.0 }),
+      molyGlass: S({ color: 0x7ab882, roughness: 0.1, metalness: 0.08, transparent: true, opacity: 0.56, envMapIntensity: 1.4 }),
+      molyLiquid: S({ color: 0xc86414, roughness: 0.18, metalness: 0.05, emissive: 0x3a1400, emissiveIntensity: 0.25 }),
+      molyCloth: S({ color: 0x2a2420, roughness: 0.95 }),
+      molyFlame: S({ color: 0xffd268, emissive: 0xff6b14, emissiveIntensity: 4.5, roughness: 0.4, transparent: true, opacity: 0.92 }),
     };
     return MAT;
   }
@@ -56,23 +60,29 @@ const Models = (() => {
       p.setXYZ(i, v.x, v.y, v.z);
     }
     g.computeVertexNormals();
+    g.userData.shared = true;
     return (gcache[key] = g);
   }
   function cylZ(r1, r2, len, seg = 14) {
     const key = ['cz', r1, r2, len, seg].join('_');
     if (gcache[key]) return gcache[key];
     const g = new THREE.CylinderGeometry(r1, r2, len, seg); g.rotateX(Math.PI / 2);
+    g.userData.shared = true;
     return (gcache[key] = g);
   }
   function cylY(r1, r2, len, seg = 12) {
     const key = ['cy', r1, r2, len, seg].join('_');
     if (gcache[key]) return gcache[key];
-    return (gcache[key] = new THREE.CylinderGeometry(r1, r2, len, seg));
+    const g = new THREE.CylinderGeometry(r1, r2, len, seg);
+    g.userData.shared = true;
+    return (gcache[key] = g);
   }
   function capsule(r, len) {
     const key = ['cap', r, len].join('_');
     if (gcache[key]) return gcache[key];
-    return (gcache[key] = new THREE.CapsuleGeometry(r, len, 4, 10));
+    const g = new THREE.CapsuleGeometry(r, len, 4, 10);
+    g.userData.shared = true;
+    return (gcache[key] = g);
   }
   function part(parent, geo, mat, x, y, z, rx = 0, ry = 0, rz = 0) {
     const m = new THREE.Mesh(geo, mat);
@@ -197,6 +207,41 @@ const Models = (() => {
       r.bolt = part(g, rbox(0.014, 0.014, 0.024, 0.004), M.gun2, 0.032, 0.062, -0.18);
       r.muzzle.position.set(0, 0.036, -0.77); r.eject.position.set(0.03, 0.06, -0.11);
       r.guard.set(0, 0.002, -0.37); r.magWell = new THREE.Vector3(0, -0.006, -0.17);
+    } else if (id === 'famas') {
+      // FAMAS 法式无托突击步枪：后置弹匣 + 高耸提把/瞄准桥 + 一体化护木与折叠脚架
+      // 主机身 & 后置托腮板（无托结构延伸至握把后方）
+      part(g, rbox(0.048, 0.074, 0.44, 0.008), M.gun, 0, 0.032, 0.04);
+      part(g, rbox(0.046, 0.058, 0.22, 0.008), M.gun, 0, 0.03, -0.24);
+      part(g, rbox(0.05, 0.095, 0.024, 0.006), M.dark, 0, 0.022, 0.265); // 托底橡胶垫
+      part(g, rbox(0.044, 0.024, 0.16, 0.008), M.gun2, 0, 0.072, 0.17); // 贴腮垫
+      // 标志性高耸提把与顶部瞄准导轨桥
+      part(g, rbox(0.024, 0.02, 0.36, 0.004), M.gun2, 0, 0.122, -0.06); // 提把顶梁
+      for (let i = 0; i < 8; i++) part(g, rbox(0.026, 0.005, 0.014, 0.001), M.dark, 0, 0.134, -0.21 + i * 0.042);
+      part(g, rbox(0.022, 0.056, 0.042, 0.004), M.gun2, 0, 0.094, 0.09, -0.28);  // 后支柱
+      part(g, rbox(0.022, 0.056, 0.042, 0.004), M.gun2, 0, 0.094, -0.21, 0.28);  // 前支柱
+      part(g, rbox(0.022, 0.046, 0.024, 0.003), M.dark, 0, 0.095, -0.06);        // 中加强柱
+      part(g, rbox(0.014, 0.022, 0.016, 0.002), M.dark, 0, 0.142, 0.105);        // 照门
+      part(g, rbox(0.005, 0.02, 0.008, 0.001), M.dark, 0, 0.142, -0.225);        // 准星
+      // 提把下方居中拉机柄
+      r.bolt = part(g, rbox(0.014, 0.014, 0.038, 0.003), M.steel, 0, 0.088, -0.14);
+      // 护木散热槽 & 两侧折叠两脚架杆
+      for (let i = 0; i < 4; i++) part(g, rbox(0.05, 0.014, 0.014, 0.002), M.dark, 0, 0.036, -0.18 - i * 0.036);
+      for (const sx of [-1, 1]) part(g, cylZ(0.0055, 0.0055, 0.25, 8), M.dark, sx * 0.028, 0.052, -0.18);
+      // 前置枪管与消焰器
+      part(g, cylZ(0.0095, 0.0095, 0.22, 12), M.dark, 0, 0.042, -0.44);
+      part(g, cylZ(0.013, 0.013, 0.048, 10), M.gun2, 0, 0.042, -0.56);
+      // 握把与经典法式全包冬用护圈
+      part(g, rbox(0.03, 0.096, 0.042, 0.008), M.poly, 0, -0.048, 0.0, 0.24);
+      part(g, rbox(0.008, 0.008, 0.125, 0.002), M.dark, 0, -0.082, -0.068);
+      part(g, rbox(0.008, 0.082, 0.01, 0.002), M.dark, 0, -0.042, -0.126);
+      part(g, rbox(0.005, 0.022, 0.007, 0.002), M.steel, 0, -0.024, -0.058);
+      // 后置无托弹匣（位于握把后方）
+      const mag = node(g, 0, -0.018, 0.118);
+      part(mag, rbox(0.026, 0.155, 0.062, 0.004), M.mag, 0, -0.072, 0, -0.08);
+      r.mag = mag;
+      r.muzzle.position.set(0, 0.042, -0.60); r.eject.position.set(0.028, 0.055, 0.10);
+      r.grip.set(0, -0.048, 0.0); r.guard.set(0, 0.002, -0.25);
+      r.magWell = new THREE.Vector3(0, -0.018, 0.118);
     } else if (id === 'nova') {
       // Nova 泵动霰弹枪
       part(g, rbox(0.048, 0.064, 0.28, 0.01), M.gun, 0, 0.03, -0.12);
@@ -419,6 +464,18 @@ const Models = (() => {
       part(g, rbox(0.012, 0.075, 0.006, 0.002), M.gun2, 0.015, 0.02, 0, 0, 0, -0.15);
       const pin = new THREE.Mesh(new THREE.TorusGeometry(0.012, 0.0022, 6, 16), M.steel); pin.position.set(-0.018, 0.058, 0); pin.rotation.y = Math.PI / 2; g.add(pin);
       r.pin = pin; r.grip.set(0, 0, 0);
+    } else if (id === 'molotov') {
+      // 燃烧弹：玻璃瓶 + 琥珀色燃油核心 + 深色瓶口布条 + 发光燃烧引信焰心
+      part(g, cylY(0.032, 0.032, 0.11, 14), M.molyGlass, 0, -0.005, 0);
+      part(g, cylY(0.013, 0.032, 0.038, 14), M.molyGlass, 0, 0.069, 0);
+      part(g, cylY(0.012, 0.013, 0.044, 12), M.molyGlass, 0, 0.108, 0);
+      part(g, cylY(0.027, 0.027, 0.088, 12), M.molyLiquid, 0, -0.014, 0);
+      part(g, cylY(0.0155, 0.0165, 0.032, 12), M.molyCloth, 0, 0.106, 0);
+      part(g, rbox(0.012, 0.052, 0.022, 0.004), M.molyCloth, 0.008, 0.145, -0.004, 0.18, 0, -0.22);
+      const fl1 = part(g, cylY(0.001, 0.016, 0.044, 8), M.molyFlame, 0.012, 0.185, -0.008, 0.1, 0, -0.15);
+      part(g, cylY(0.001, 0.01, 0.034, 8), M.molyFlame, 0.016, 0.192, -0.006, -0.1, 0, 0.12);
+      r.flame = fl1;
+      r.grip.set(0, -0.01, 0); r.muzzle.position.set(0, 0.19, 0);
     } else if (id === 'c4') {
       part(g, rbox(0.18, 0.05, 0.12, 0.006), M.olive, 0, 0, 0);
       for (let i = 0; i < 3; i++) part(g, rbox(0.055, 0.035, 0.11, 0.008), M.clay, -0.06 + i * 0.06, 0.04, 0);
@@ -475,6 +532,18 @@ const Models = (() => {
     for (const [mat, items] of byMat) { const mesh = new THREE.Mesh(mergeGeos(items), mat); mesh.castShadow = true; out.push(mesh); }
     return out;
   }
+  // 安全释放非共享几何体（永不释放缓存共享几何体、Models.mats / Skins.mats 材质与纹理）
+  function disposeObject(obj) {
+    if (!obj || typeof obj.traverse !== 'function') return;
+    const seen = new Set();
+    obj.traverse((o) => {
+      const g = o.geometry;
+      if (g && typeof g.dispose === 'function' && !(g.userData && g.userData.shared) && !seen.has(g)) {
+        seen.add(g);
+        g.dispose();
+      }
+    });
+  }
   const tpCache = {};
   function thirdPerson(id, skinId = 'default') {
     const key = id + ':' + (skinId || 'default');
@@ -482,6 +551,8 @@ const Models = (() => {
       const w = weapon(id, skinId);
       const holder = new THREE.Group(); holder.add(w.group);
       const merged = mergeChildren(w.group, holder);
+      for (const m of merged) if (m.geometry) m.geometry.userData.shared = true;
+      disposeObject(w.group);
       tpCache[key] = { meshes: merged, muzzle: w.muzzle.position.clone(), grip: w.grip.clone(), guard: w.guard.clone(), pistol: w.pistol };
     }
     const c = tpCache[key];
@@ -726,7 +797,20 @@ const Models = (() => {
           groups[kind].push({ geo, matrix: new THREE.Matrix4().multiplyMatrices(bone.matrixWorld, tmp.matrix), bi: bones.indexOf(bone), color });
         };
         buildBody(this, team, add);
-        skinGeoCache[team] = { cloth: buildSkinned(groups.cloth), plain: buildSkinned(groups.plain) };
+        const clothGeo = buildSkinned(groups.cloth);
+        const plainGeo = buildSkinned(groups.plain);
+        clothGeo.userData.shared = true;
+        plainGeo.userData.shared = true;
+        skinGeoCache[team] = { cloth: clothGeo, plain: plainGeo };
+        const tmpSeen = new Set();
+        for (const list of [groups.cloth, groups.plain]) {
+          for (const it of list) {
+            const gg = it.geo;
+            if (gg && typeof gg.dispose === 'function' && !(gg.userData && gg.userData.shared) && !tmpSeen.has(gg)) {
+              tmpSeen.add(gg); gg.dispose();
+            }
+          }
+        }
       }
       this.skeleton = new THREE.Skeleton(bones);
       this.meshes = [];
@@ -851,5 +935,5 @@ const Models = (() => {
     }
   }
 
-  return { mats, weapon, thirdPerson, charMats, Humanoid, rbox, cylZ, cylY, mergeGeos, SHADOW_ONLY };
+  return { mats, weapon, thirdPerson, charMats, Humanoid, rbox, cylZ, cylY, mergeGeos, disposeObject, SHADOW_ONLY };
 })();

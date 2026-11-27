@@ -64,8 +64,9 @@ class NetHost {
   constructor(conn) {
     this.conn = conn; this.host = true; this.client = false;
     this.g = null; this.evq = []; this.n = 0;
+    this._lastScoreCT = -1; this._lastScoreT = -1;
   }
-  attach(g) { this.g = g; }
+  attach(g) { this.g = g; this._lastScoreCT = -1; this._lastScoreT = -1; }
   detach() { this.g = null; }
   remotes() { return this.g ? this.g.actors.filter((a) => a.remote) : []; }
   byPid(pid) { return this.g && this.g.actors.find((a) => a.remote && a.pid === pid); }
@@ -86,6 +87,7 @@ class NetHost {
       if (m.rtt != null) a.ping = m.rtt;
     } else if (m.t === 'buy') g.buy(a, String(m.id), false);
     else if (m.t === 'fall') g.applyDamage(a, null, clamp(Number(m.d) || 0, 0, 200), 'fall', null, null);
+    else if (m.t === 'ping' && Array.isArray(m.o) && Array.isArray(m.d) && g.placePing) g.placePing(a, vn(m.o, new THREE.Vector3()), vn(m.d, new THREE.Vector3()));
     else if (m.t === 'pi') this.conn.sendTo(pid, { t: 'po', c: m.c });
   }
 
@@ -121,10 +123,18 @@ class NetHost {
       if (a.hist.length > 5 * 48) a.hist.splice(0, 5 * 8);
     }
     if (++this.n % NET_SNAP_EVERY) return;
+    const md = g.mode;
+    const scCT = (md.score && md.score.CT) || 0;
+    const scT = (md.score && md.score.T) || 0;
+    if (scCT !== this._lastScoreCT || scT !== this._lastScoreT) {
+      this._lastScoreCT = scCT;
+      this._lastScoreT = scT;
+      this.conn.sendTo('*', { t: 'score', sc: [scCT, scT] });
+    }
     const rem = this.remotes();
     if (this.n % 64 === 0 || this.rosterDirty) this.sendRoster();
     if (!rem.length) { this.evq.length = 0; return; }
-    const md = g.mode, B = md.bomb;
+    const B = md.bomb;
     const M = {};
     for (const a of rem) {
       M[a.pid] = {
@@ -154,7 +164,8 @@ class NetHost {
       w ? w.id : '', NET_SLOTS.indexOf(a.slot),
       [p ? p.id : '', p ? p.mag : 0, p ? p.reserve : 0, s ? s.id : '', s ? s.mag : 0, s ? s.reserve : 0, I.knife.id, I.nades.he, I.nades.flash, I.nades.smoke, I.c4 ? 1 : 0, I.defuser ? 1 : 0],
       a.spawnSeq, this.g.time - (a.spottedT || -9) < 0.6 ? 1 : 0,
-      typeof Skins !== 'undefined' ? Skins.indexOf(a.skinOf(w ? w.id : '')) : 0];
+      typeof Skins !== 'undefined' ? Skins.indexOf(a.skinOf(w ? w.id : '')) : 0,
+      a.headshots || 0, Math.round(a.damageDealt || 0), I.nades.molotov || 0, w && w.burst ? 1 : 0, a.arLevel || 0, a.arProgress || 0];
   }
   roster() {
     return this.g.actors.map((a) => ({ n: a.id, name: a.name, team: a.team, bot: a.isBot ? 1 : 0, pid: a.isPlayer ? this.conn.id : a.remote ? a.pid : 0, ping: a.ping == null ? null : a.ping }));
@@ -220,8 +231,8 @@ class NetClient {
       while (this.snaps.length > 40) this.snaps.shift();
       const myId = this.myId;
       for (const ev of m.ev) {
-        // 和自己有关的事件立刻处理（开枪反馈、受伤、阵亡），其余跟随插值延迟，与模型动作对齐
-        if (ev.a === myId || ev.v === myId || ev.k === myId || ev.s === myId || ev.t === 'clr') this.event(ev); else this.evq.push(ev);
+        // 和自己有关的事件及标点/火焰/清场立刻处理，其余跟随插值延迟，与模型动作对齐
+        if (ev.a === myId || ev.v === myId || ev.k === myId || ev.s === myId || ev.t === 'clr' || ev.t === 'ping' || ev.t === 'fire' || ev.t === 'ext') this.event(ev); else this.evq.push(ev);
       }
       this.applySelf(m);
     } else if (m.t === 'ro') this.roster(m.list);
@@ -289,14 +300,25 @@ class NetClient {
         P.events.push(ev);
       }
     }
-    // 爆破模式每回合冻结期自动打开购买菜单
-    if (M.ph === 'freeze' && this.lastPh !== 'freeze' && P.alive && md.cb) HUD.openBuy(g);
+    // 爆破模式每回合冻结期自动打开购买菜单，并重置回合击杀计数
+    if (M.ph === 'freeze' && this.lastPh !== 'freeze') {
+      for (const a of g.actors) a.roundKills = 0;
+      if (P.alive && md.cb) HUD.openBuy(g);
+    }
     this.lastPh = M.ph;
   }
   applyStats(a, row) {
     a.hp = row[14]; a.armor = row[15]; a.money = row[16]; a.kills = row[17]; a.deaths = row[18]; a.assists = row[19]; a.mvp = row[20];
     a.helmet = !!(row[11] & 128);
     a.spottedT = row[25] ? this.g.time : -9;
+    if (row.length > 27) a.headshots = row[27] || 0;
+    if (row.length > 28) a.damageDealt = row[28] || 0;
+    if (row.length > 31) a.arLevel = row[31] || 0;
+    if (row.length > 32) a.arProgress = row[32] || 0;
+    if (this.g && this.g.mode && this.g.mode.id === 'armsrace') {
+      const lastTier = ((this.g.mode.ladder && this.g.mode.ladder.length) || 12) - 1;
+      a.overrideSkin = (a.arLevel || 0) >= lastTier ? 'gold' : null;
+    }
   }
   syncInv(a, row) {
     const I = a.inv, v = row[23];
@@ -304,7 +326,9 @@ class NetClient {
     I.primary = slotInst(I.primary, v[0], v[1], v[2]);
     I.secondary = slotInst(I.secondary, v[3], v[4], v[5]);
     if (I.knife.id !== v[6]) I.knife = new WeaponInst(v[6]);
-    I.nades.he = v[7]; I.nades.flash = v[8]; I.nades.smoke = v[9]; I.c4 = !!v[10]; I.defuser = !!v[11];
+    I.nades.he = v[7]; I.nades.flash = v[8]; I.nades.smoke = v[9];
+    I.nades.molotov = row.length > 29 ? (row[29] || 0) : (v.length > 12 ? (v[12] || 0) : 0);
+    I.c4 = !!v[10]; I.defuser = !!v[11];
     const slot = NET_SLOTS[row[22]] || 'knife', wid = row[21];
     const skinId = (typeof Skins !== 'undefined' && row.length > 26) ? Skins.byIndex(row[26] || 0) : 'default';
     let w = a.weapon;
@@ -316,6 +340,7 @@ class NetClient {
       else w = new WeaponInst(wid);
       a.weapon = w;
     }
+    if (w && row.length > 30) w.burst = !!row[30];
     if (a.model && w) a.model.setWeapon(w.id, skinId);
     if (slot === 'nade') a.nadeId = wid;
     a.slot = slot;
@@ -394,14 +419,28 @@ class NetClient {
       }
       case 'fx': if (Effects[ev.f]) Effects[ev.f](...ev.a.map(fxDec)); break;
       case 'dmg': {
+        const k = A(ev.k), v = A(ev.v);
         if (ev.v === this.myId) {
           g.dmgFlash = Math.min(1, g.dmgFlash + ev.d / 60 + 0.25);
           Sound.play('hurt', { vol: 0.55 });
-          const k = A(ev.k);
-          if (k && k !== P) HUD.damageFrom(-wrapAngle(yawOf(k.pos.x - P.pos.x, k.pos.z - P.pos.z) - P.yaw));
+          if (k && k !== P) {
+            HUD.damageFrom(-wrapAngle(yawOf(k.pos.x - P.pos.x, k.pos.z - P.pos.z) - P.yaw));
+            if (k.team !== P.team) {
+              if (!P.dmgFrom) P.dmgFrom = new Map();
+              const tf = P.dmgFrom.get(k) || { dmg: 0, hits: 0 };
+              tf.dmg += ev.d; tf.hits += 1;
+              P.dmgFrom.set(k, tf);
+            }
+          }
           if (ev.g === 'head') Sound.play(P.helmet && ev.ar ? 'hs_helmet' : 'hs_flesh', { vol: 0.4 });
         }
         if (ev.k === this.myId && ev.v !== this.myId && ev.e) {
+          if (v && v !== P && v.team !== P.team) {
+            if (!P.dmgTo) P.dmgTo = new Map();
+            const gt = P.dmgTo.get(v) || { dmg: 0, hits: 0 };
+            gt.dmg += ev.d; gt.hits += 1;
+            P.dmgTo.set(v, gt);
+          }
           if (ev.g === 'head') { Sound.play(ev.ar ? 'hs_helmet' : 'hs_flesh', { vol: 0.75 }); Sound.play('hs_dink', { vol: 0.42 }); }
           else Sound.play('hit_body', { vol: 0.5 });
           HUD.hitmarker(ev.kl, ev.g === 'head');
@@ -412,12 +451,20 @@ class NetClient {
         const v = A(ev.v), k = A(ev.k);
         if (!v) break;
         HUD.killfeed({ killer: k && k !== v ? k : null, victim: v, weapon: ev.w, hs: ev.hs, wallbang: ev.wb, mine: ev.k === this.myId || ev.v === this.myId });
-        if (ev.k === this.myId && ev.v !== this.myId) Sound.play('kill_confirm', { vol: 0.48 });
+        if (k && k !== v && k.team !== v.team) k.roundKills = (k.roundKills || 0) + 1;
+        if (ev.k === this.myId && ev.v !== this.myId && v.team !== P.team) {
+          Sound.play('kill_confirm', { vol: 0.48 });
+          if (ev.wid && g.mode.id !== 'range' && typeof StatTrak !== 'undefined' && StatTrak.recordKill) StatTrak.recordKill(ev.wid);
+          const streaks = { 2: ['双杀 · DOUBLE KILL', ev.hs ? '爆头终结' : '连续击杀'], 3: ['三杀 · TRIPLE KILL', '手感火热！'], 4: ['四杀 · QUADRA KILL', '势不可挡！'], 5: ['五杀 · ACE！', '全场最佳表现'] };
+          const st = streaks[P.roundKills];
+          if (st && g.mode.phase === 'live' && !g.over) HUD.center(st[0], 'win-' + P.team.toLowerCase(), 1.8, st[1]);
+        }
         v.alive = false; v.hp = 0; v.killedSq = v.spawnSeq;
         g.makeRagdoll(v, ev.dir ? vn(ev.dir) : null, ev.g, ev.hs);
         if (v === P) {
           g.playerDied(k && k !== v ? k : null, ev.w, ev.hs, ev.wb);
-          if (g.mode.id === 'tdm') HUD.showDeath(document.getElementById('deathinfo').innerHTML.split('<small>')[0], '3 秒后复活');
+          if (g.mode.id === 'tdm') g.showDeathHeader('3 秒后复活');
+          else if (g.mode.id === 'armsrace') g.showDeathHeader('2 秒后复活');
         }
         break;
       }
@@ -430,11 +477,36 @@ class NetClient {
       }
       case 'undrop': {
         const d = this.drops.get(ev.n);
-        if (d) { this.drops.delete(ev.n); g.scene.remove(d.mesh); const i = g.drops.indexOf(d); if (i >= 0) g.drops.splice(i, 1); }
+        if (d) {
+          this.drops.delete(ev.n); g.scene.remove(d.mesh);
+          if (typeof Models !== 'undefined' && Models.disposeObject) Models.disposeObject(d.mesh);
+          const i = g.drops.indexOf(d); if (i >= 0) g.drops.splice(i, 1);
+        }
         break;
       }
       case 'nade': { const a = A(ev.a); if (a) g.spawnGrenade(ev.id, vn(ev.p), vn(ev.v), a); break; }
-      case 'clr': g.clearRoundFx(); this.drops.clear(); break;
+      case 'fire': {
+        const pos = vn(ev.p, new THREE.Vector3());
+        g.playAt('moly_break', pos, { vol: 1.25, ref: 7, roll: 0.9, rev: 0.4, net: false });
+        if (Effects.fire) Effects.fire(pos, 7.5, 3.3);
+        break;
+      }
+      case 'ext': {
+        const pos = vn(ev.p, new THREE.Vector3());
+        const cnt = Effects.extinguishFiresNear ? Effects.extinguishFiresNear(pos, 4.4) : 1;
+        if (cnt > 0) g.playAt('fire_extinguish', pos, { vol: 1.15, ref: 6, roll: 0.9, rev: 0.25, net: false });
+        break;
+      }
+      case 'ping': {
+        const team = ev.tm ? 'T' : 'CT';
+        const viewTeam = (g.viewTarget || P).team;
+        if (team === viewTeam && g.addPing) g.addPing({ pos: vn(ev.p, new THREE.Vector3()), team, label: ev.l || '', danger: !!ev.dg, by: ev.by || '' });
+        break;
+      }
+      case 'clr':
+        g.clearRoundFx(); this.drops.clear();
+        for (const a of g.actors) { a.roundKills = 0; if (a.dmgTo) a.dmgTo.clear(); if (a.dmgFrom) a.dmgFrom.clear(); }
+        break;
       case 'c4x': g.c4Fx(vn(ev.p)); break;
       default: break;
     }
@@ -462,8 +534,14 @@ class NetClient {
 // ======================================================================
 class ModeMirror {
   constructor(g, id) {
-    this.g = g; this.id = id; this.title = id === 'comp' ? '爆破竞技' : '团队死斗';
-    this.infiniteMoney = id !== 'comp'; this.spectateAllowed = id === 'comp';
+    this.g = g; this.id = id;
+    this.title = { comp: '爆破竞技', tdm: '团队死斗', armsrace: '军备竞赛', retake: '残局回防' }[id] || '爆破竞技';
+    this.infiniteMoney = id === 'tdm' || id === 'armsrace';
+    this.spectateAllowed = id === 'comp' || id === 'retake';
+    this.ladder = (typeof ARMS_RACE_LADDER !== 'undefined' && Array.isArray(ARMS_RACE_LADDER))
+      ? ARMS_RACE_LADDER
+      : ['mp9', 'p90', 'nova', 'galil', 'famas', 'm4a1s', 'm4a4', 'ak47', 'ssg08', 'awp', 'deagle', 'karambit'];
+    this.killsPerLevel = 2;
     this.score = { CT: 0, T: 0 }; this.phase = 'live'; this.bomb = null; this.tl = null; this.cb = false; this.bt = 0;
     this.bombMesh = null;
   }
@@ -473,6 +551,16 @@ class ModeMirror {
   canBuy(a) { return a === this.g.player && a.alive && this.cb; }
   buyTimeLeft() { return this.bt; }
   timeLeft() { return this.tl; }
+  leader() {
+    let best = null;
+    for (const a of this.g.actors) {
+      if (!best || (a.arLevel || 0) > (best.arLevel || 0)
+        || ((a.arLevel || 0) === (best.arLevel || 0) && ((a.arProgress || 0) > (best.arProgress || 0) || a.kills > best.kills))) {
+        best = a;
+      }
+    }
+    return best ? { name: best.name, team: best.team, level: best.arLevel || 0, total: this.ladder.length } : null;
+  }
   syncBomb(b) {
     if (!b) { this.bomb = null; this.clearMesh(); return; }
     const B = this.bomb || (this.bomb = { pos: new THREE.Vector3() });
@@ -480,7 +568,13 @@ class ModeMirror {
     if (B.planted && !this.bombMesh) { const m = this.g.bombModel(B.pos, b.y); this.bombMesh = m.group; }
     if (B.exploded && this.bombMesh) this.bombMesh.visible = false;
   }
-  clearMesh() { if (this.bombMesh) this.g.scene.remove(this.bombMesh); this.bombMesh = null; }
+  clearMesh() {
+    if (this.bombMesh) {
+      this.g.scene.remove(this.bombMesh);
+      if (typeof Models !== 'undefined' && Models.disposeObject) Models.disposeObject(this.bombMesh);
+    }
+    this.bombMesh = null;
+  }
   dispose() { this.clearMesh(); }
 }
 
@@ -519,7 +613,7 @@ async function copyText(text) {
 
 const Lobby = {
   conn: null, role: null, roomCode: null, players: [], publicRooms: [], publicLoading: false, publicTimer: null, lastTeams: {},
-  opts: { mode: 'comp', diff: 'normal', size: 5, map: Settings.data.map || 'dust', ff: false }, inGame: false, hostIn: false, hostGame: false,
+  opts: { mode: 'comp', diff: 'normal', size: 5, map: Settings.data.map || 'dust', ff: false, lowGrav: !!Settings.data.lowGrav }, inGame: false, hostIn: false, hostGame: false,
   ctx: null, busy: false,
 
   rememberTeams() {
@@ -579,7 +673,7 @@ const Lobby = {
     $('lbOpts').addEventListener('click', (e) => {
       const b = e.target.closest('b[data-k]'); if (!b || this.role !== 'host') return;
       const k = b.dataset.k, v = b.dataset.v;
-      this.opts[k] = k === 'size' ? Number(v) : k === 'ff' ? v === '1' : v;
+      this.opts[k] = k === 'size' ? Number(v) : (k === 'ff' || k === 'lowGrav') ? v === '1' : v;
       Sound.play('ui_click'); this.broadcast(); this.render();
     });
     $('lbPlayers').addEventListener('click', (e) => {
@@ -611,10 +705,11 @@ const Lobby = {
     });
   },
   open() {
-    if (!this.conn && (Engine.opts.mode === 'comp' || Engine.opts.mode === 'tdm')) {
+    if (!this.conn && ['comp', 'tdm', 'armsrace', 'retake'].includes(Engine.opts.mode)) {
       this.opts.mode = Engine.opts.mode;
     }
     if (!this.conn && Engine.opts.map) this.opts.map = Engine.opts.map;
+    if (!this.conn && Engine.opts.lowGrav != null) this.opts.lowGrav = !!Engine.opts.lowGrav;
     $('menu').classList.add('hidden');
     $('lobby').classList.remove('hidden');
     this.render();
@@ -647,7 +742,7 @@ const Lobby = {
   myName() {
     const el = $('lbName');
     const raw = el ? el.value : '';
-    const n = String(raw || '').trim().slice(0, 16) || '火星特勤';
+    const n = String(raw || '').replace(/[<>]/g, '').trim().slice(0, 16) || '火星特勤';
     try {
       localStorage.setItem(CALLSIGN_KEY, n);
       localStorage.setItem(NAME_KEY, n);
@@ -683,12 +778,16 @@ const Lobby = {
       box.innerHTML = '<div class="lbpub-empty">当前暂无公开房间，点击上方「创建云端房间」即可开黑</div>';
       return;
     }
+    const modeLabels = { elimination: '5v5 爆破竞技', deathmatch: '团队死斗', armsrace: '军备竞赛', retake: '残局回防' };
+    const mapNames = { dust: '炽沙小镇', frost: '极地科研站', harbor: '黄昏货运港', mars: '赤岩前哨' };
     box.innerHTML = this.publicRooms.map((r) => {
-      const modeLabel = r.mode === 'deathmatch' ? '团队死斗' : '5v5 爆破竞技';
+      const modeLabel = modeLabels[r.mode] || '5v5 爆破竞技';
+      const mapLabel = mapNames[r.mapId] || '炽沙小镇';
       const isLive = r.phase === 'live' || r.phase === 'freeze' || r.phase === 'round_over';
+      const scoreText = isLive ? ` · T ${Number(r.scoreRed) || 0} : ${Number(r.scoreBlue) || 0} CT` : '';
       const stateText = isLive ? '激战中' : '候场中';
       const full = Number(r.humanCount) >= Number(r.maxHumans);
-      return `<div class="lbpub-item"><div class="lbpub-meta"><span class="lbpub-code">${esc(r.code)}</span><span class="lbpub-name">${esc(r.hostName || r.name || '沙暴房间')}</span><span class="lbpub-sub">${modeLabel} · ${Number(r.humanCount) || 0}/${Number(r.maxHumans) || 10}</span><span class="lbpub-state${isLive ? ' live' : ''}">${stateText}</span></div><button class="mini${full ? '' : ' primary'}" data-join-code="${esc(r.code)}"${full ? ' disabled' : ''}>${full ? '已满' : '加入'}</button></div>`;
+      return `<div class="lbpub-item"><div class="lbpub-meta"><span class="lbpub-code">${esc(r.code)}</span><span class="lbpub-name">${esc(r.hostName || r.name || '沙暴房间')}</span><span class="lbpub-sub">${esc(mapLabel)} · ${modeLabel} · ${Number(r.humanCount) || 0}/${Number(r.maxHumans) || 10}${scoreText}</span><span class="lbpub-state${isLive ? ' live' : ''}">${stateText}</span></div><button class="mini${full ? '' : ' primary'}" data-join-code="${esc(r.code)}"${full ? ' disabled' : ''}>${full ? '已满' : '加入'}</button></div>`;
     }).join('');
   },
 
@@ -698,7 +797,9 @@ const Lobby = {
     Sound.init(); Sound.play('ui_click');
     const name = this.myName();
     const isPublic = $('lbPublic') ? !!$('lbPublic').checked : true;
-    const mode = this.opts.mode === 'tdm' ? 'deathmatch' : 'elimination';
+    const modeMap = { comp: 'elimination', tdm: 'deathmatch', armsrace: 'armsrace', retake: 'retake' };
+    const mode = modeMap[this.opts.mode] || 'elimination';
+    const mapId = this.opts.map || 'dust';
     this.status('正在分配云端 6 位房间码…');
     let code = '';
     try {
@@ -709,6 +810,7 @@ const Lobby = {
           name: (name + ' 的沙暴战局').slice(0, 28),
           hostName: name,
           mode,
+          mapId,
           isPublic,
           maxHumans: 10,
           botCount: 4,
@@ -968,11 +1070,14 @@ const Lobby = {
     if ($('lbRoomCode')) $('lbRoomCode').textContent = this.roomCode || '------';
     const O = this.opts;
     if (!O.map) O.map = 'dust';
-    const seg = (k, list) => `<div class="opt"><label>${{ mode: '模式', map: '战术地图', diff: '机器人难度', size: '每队人数（空位补 AI）', ff: '友军伤害' }[k]}</label><div class="seg${host ? '' : ' ro'}">${list.map(([v, l]) => `<b data-k="${k}" data-v="${v}" class="${String(O[k] === true ? '1' : O[k] === false ? '0' : O[k]) === String(v) ? 'on' : ''}">${l}</b>`).join('')}</div></div>`;
-    $('lbOpts').innerHTML = seg('mode', [['comp', '5v5 爆破竞技'], ['tdm', '团队死斗']]) +
+    if (O.lowGrav == null) O.lowGrav = false;
+    const seg = (k, list) => `<div class="opt"><label>${{ mode: '模式', map: '战术地图', diff: '机器人难度', size: '每队人数（空位补 AI）', ff: '友军伤害', lowGrav: '重力模式' }[k]}</label><div class="seg${host ? '' : ' ro'}">${list.map(([v, l]) => `<b data-k="${k}" data-v="${v}" class="${String(O[k] === true ? '1' : O[k] === false ? '0' : O[k]) === String(v) ? 'on' : ''}">${l}</b>`).join('')}</div></div>`;
+    $('lbOpts').innerHTML = seg('mode', [['comp', '5v5 爆破'], ['tdm', '团队死斗'], ['armsrace', '军备竞赛'], ['retake', '残局回防']]) +
       seg('map', MapGen.MAPS.map((mp) => [mp.id, mp.name])) +
       seg('diff', [['easy', '新兵'], ['normal', '老兵'], ['hard', '精英'], ['cosmic', '宇宙级']]) +
-      seg('size', [[1, '1'], [2, '2'], [3, '3'], [4, '4'], [5, '5']]) + seg('ff', [[0, '关'], [1, '开']]);
+      seg('size', [[1, '1'], [2, '2'], [3, '3'], [4, '4'], [5, '5']]) +
+      seg('ff', [[0, '关'], [1, '开']]) +
+      seg('lowGrav', [[0, '标准'], [1, '火星 0.48g']]);
     const myPid = this.conn.id;
     const col = (team) => this.players.filter((p) => p.team === team).map((p) =>
       `<div class="lp${p.pid === myPid ? ' me' : ''}">${p.host ? '<i>房主</i>' : ''}${esc(p.name)}${(host || p.pid === myPid) ? `<span class="sw" data-pid="${p.pid}" data-team="${team === 'CT' ? 'T' : 'CT'}">换到 ${team === 'CT' ? 'T' : 'CT'}</span>` : ''}</div>`).join('') || '<div class="lp empty">（空位由 AI 补齐）</div>';
