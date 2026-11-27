@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import type { CloudflareStatusSnapshot } from '../../../shared/cloudflare-types';
 import type { AdminSnapshot, AuthStatus } from '../../../shared/types';
 import { CelestialFieldBackdrop } from '../../components/CelestialFieldBackdrop';
 import {
@@ -11,15 +12,17 @@ import {
 import { createCardPointerHandlers, createMagneticHandlers } from '../../lib/pointer-fx';
 import { ArcadeAdminPanel } from './ArcadeAdminPanel';
 import { AtlasAdminPanel } from './AtlasAdminPanel';
+import { CloudflareStatusPanel } from './CloudflareStatusPanel';
 import { OpsAdminPanel } from './OpsAdminPanel';
 import { ProjectsAdminPanel } from './ProjectsAdminPanel';
 import { VaultAdminPanel } from './VaultAdminPanel';
 
-type AdminTab = 'atlas' | 'vault' | 'projects' | 'usage' | 'security' | 'arcade';
+type AdminTab = 'atlas' | 'vault' | 'projects' | 'cloudflare' | 'usage' | 'security' | 'arcade';
 
 export default function AdminPage() {
   const [auth, setAuth] = useState<AuthStatus | null>(null);
   const [snapshot, setSnapshot] = useState<AdminSnapshot | null>(null);
+  const [cfLite, setCfLite] = useState<CloudflareStatusSnapshot | null>(null);
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -31,10 +34,17 @@ export default function AdminPage() {
     const status = await readAuthStatus();
     setAuth(status);
     if (status.authenticated) {
-      const snap = await apiJson<AdminSnapshot>('/api/admin');
+      const [snap, lite] = await Promise.all([
+        apiJson<AdminSnapshot>('/api/admin'),
+        apiJson<CloudflareStatusSnapshot>('/api/admin/cloudflare/status?mode=lite&poll=1').catch(
+          () => null,
+        ),
+      ]);
       setSnapshot(snap);
+      if (lite) setCfLite(lite);
     } else {
       setSnapshot(null);
+      setCfLite(null);
     }
   }, []);
 
@@ -188,7 +198,7 @@ export default function AdminPage() {
         {snapshot && (
           <div
             aria-label="站点内容实时概览"
-            className="mb-5 grid grid-cols-2 gap-2.5 rounded-[18px] border border-hairline bg-surface/85 p-3 sm:grid-cols-3 lg:grid-cols-5"
+            className="mb-5 grid grid-cols-2 gap-2.5 rounded-[18px] border border-hairline bg-surface/85 p-3 sm:grid-cols-3 lg:grid-cols-6"
           >
             <div className="rounded-[12px] bg-paper px-3.5 py-2.5">
               <div className="text-[11.5px] text-ink-muted">公开 / 全部旅程</div>
@@ -219,7 +229,7 @@ export default function AdminPage() {
                 {publishedProjects} / {projectsList.length}
               </div>
             </div>
-            <div className="col-span-2 rounded-[12px] bg-paper px-3.5 py-2.5 sm:col-span-1">
+            <div className="rounded-[12px] bg-paper px-3.5 py-2.5">
               <div className="text-[11.5px] text-ink-muted">回收站</div>
               <div
                 className={[
@@ -230,6 +240,38 @@ export default function AdminPage() {
                 {trashCount} 项
               </div>
             </div>
+            <button
+              type="button"
+              onClick={() => setActiveTab('cloudflare')}
+              className="rounded-[12px] border border-transparent bg-paper px-3.5 py-2.5 text-left transition-colors hover:border-hairline-strong hover:bg-surface-hover"
+            >
+              <div className="flex items-center justify-between gap-1.5 text-[11.5px] text-ink-muted">
+                <span>Cloudflare</span>
+                <span
+                  aria-hidden="true"
+                  className={[
+                    'cf-pulse-dot h-2 w-2 rounded-full',
+                    cfLite?.overall === 'down'
+                      ? 'cf-dot-err'
+                      : cfLite?.overall === 'degraded'
+                        ? 'cf-dot-warn'
+                        : 'cf-dot-ok',
+                  ].join(' ')}
+                />
+              </div>
+              <div className="tabular-nums-mono mt-0.5 flex items-baseline gap-1.5 text-[15px] font-medium text-ink">
+                <span>{cfLite?.runtime.edge.colo ?? 'LOCAL'}</span>
+                <span className="text-[11.5px] font-normal text-ink-muted">
+                  {cfLite
+                    ? cfLite.overall === 'healthy'
+                      ? `${cfLite.runtime.workerResponseMs}ms`
+                      : cfLite.overall === 'degraded'
+                        ? '降级'
+                        : '异常'
+                    : '查看'}
+                </span>
+              </div>
+            </button>
           </div>
         )}
 
@@ -243,6 +285,7 @@ export default function AdminPage() {
               { id: 'atlas', label: '旅图整理' },
               { id: 'vault', label: '文件密匣' },
               { id: 'projects', label: '展柜与首页' },
+              { id: 'cloudflare', label: 'Cloudflare 状态' },
               { id: 'usage', label: '用量与备份' },
               { id: 'security', label: '安全与会话' },
               { id: 'arcade', label: '竞技榜单' },
@@ -304,6 +347,13 @@ export default function AdminPage() {
                 onRefresh={refreshAll}
                 onStatus={setStatusMsg}
                 onError={setErrorMsg}
+              />
+            )}
+            {activeTab === 'cloudflare' && (
+              <CloudflareStatusPanel
+                onStatus={setStatusMsg}
+                onError={setErrorMsg}
+                onSnapshotChange={setCfLite}
               />
             )}
             {(activeTab === 'usage' || activeTab === 'security') && (

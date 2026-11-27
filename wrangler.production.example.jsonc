@@ -48,5 +48,9 @@
   ],
   "observability": {
     "enabled": false
+  },
+  "vars": {
+    "CF_WORKER_NAME": "lvtushouji-site",
+    "CF_ZONE_NAME": "your-domain.example"
   }
 }

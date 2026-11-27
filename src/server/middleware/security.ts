@@ -346,7 +346,12 @@ export async function beginCloudRequest(request: Request, env: AppBindings): Pro
       ctx.authenticated = true;
       ctx.sessionId = session.id;
       ctx.csrfToken = await hmacHex(env.SESSION_SECRET, `csrf:${session.id}`);
-      if (request.method !== 'GET' || new URL(request.url).pathname !== '/api/security/auth') {
+      const reqUrl = new URL(request.url);
+      const isPassivePoll =
+        request.method === 'GET' &&
+        (reqUrl.pathname === '/api/security/auth' ||
+          (reqUrl.pathname === '/api/admin/cloudflare/status' && reqUrl.searchParams.get('poll') === '1'));
+      if (!isPassivePoll) {
         await env.DB.prepare('UPDATE security_sessions SET last_seen=? WHERE id=?')
           .bind(now, session.id)
           .run();
@@ -925,7 +930,7 @@ export async function finishCloudResponse(
   const kind = info?.kind || (result.status >= 400 ? 'blocked' : 'access');
   const polling =
     request.method === 'GET' &&
-    path.startsWith('/api/security') &&
+    (path.startsWith('/api/security') || path === '/api/admin/cloudflare/status') &&
     result.status < 400 &&
     !info?.kind;
 

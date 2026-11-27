@@ -5,6 +5,13 @@ export type AppBindings = Env & {
   SESSION_SECRET: string;
   SETUP_TOKEN?: string;
   TIANDITU_KEY?: string;
+  CF_API_TOKEN?: string;
+  CF_ACCOUNT_ID?: string;
+  CF_ZONE_ID?: string;
+  CF_ZONE_NAME?: string;
+  CF_WORKER_NAME?: string;
+  CF_D1_DATABASE_ID?: string;
+  CF_R2_BUCKET_NAME?: string;
 };
 
 export type CloudContext = {
