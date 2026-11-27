@@ -1,3 +1,9 @@
 SESSION_SECRET=replace-with-at-least-32-random-characters-for-local-dev
 SETUP_TOKEN=replace-with-at-least-32-random-characters-for-setup
 TIANDITU_KEY=
+# Optional: Cloudflare API Token for /admin Cloudflare real-time analytics & quick ops
+CF_API_TOKEN=
+CF_ACCOUNT_ID=
+CF_ZONE_ID=
+CF_ZONE_NAME=
+CF_WORKER_NAME=lvtushouji-site
