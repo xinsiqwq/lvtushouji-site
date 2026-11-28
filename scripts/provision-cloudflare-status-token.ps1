@@ -76,7 +76,7 @@ try {
       }
     }
 
-    Set-Content -LiteralPath $devVarsPath -Value $outLines -Encoding utf8NoBOM
+    [System.IO.File]::WriteAllLines($devVarsPath, [string[]]$outLines, [System.Text.UTF8Encoding]::new($false))
     Write-Host "已写入本地 .dev.vars（已加入 .gitignore，不会提交到仓库）。重启 npm run dev 即可生效。" -ForegroundColor Green
     return
   }
